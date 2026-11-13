@@ -464,16 +464,30 @@ def interval_bins(row, args):
     )))
 
 
-def whole_video_samples(open_video, args):
+def whole_video_interval(last_offset):
+    if last_offset is None:
+        raise ValueError("视频没有可解码帧")
+    return Segment("", "", 0, math.floor(last_offset) + 1, (IGNORE, IGNORE))
+
+
+def whole_video_samples(open_video, args, *, decode_passes=2):
+    if decode_passes == 1:
+        with open_video() as container:
+            stream = container.streams.video[0]
+            stream.codec_context.thread_count = 1
+            decoded = list(video_frames(container, stream))
+            interval = whole_video_interval(decoded[-1][0] if decoded else None)
+            selected = list(samples_in_intervals(decoded, [interval], [interval_bins(interval, args)]))
+        del decoded
+        yield from selected
+        return
     with open_video() as container:
         stream = container.streams.video[0]
         stream.codec_context.thread_count = 1
         last_offset = None
         for last_offset, _ in video_frames(container, stream):
             pass
-    if last_offset is None:
-        raise ValueError("视频没有可解码帧")
-    interval = Segment("", "", 0, math.floor(last_offset) + 1, (IGNORE, IGNORE))
+    interval = whole_video_interval(last_offset)
     with open_video() as container:
         stream = container.streams.video[0]
         stream.codec_context.thread_count = 1

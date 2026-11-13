@@ -73,4 +73,15 @@ $engineReport = '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-test.json'
   --report '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-pipeline.json'
 ```
 
-全链路复测与本地推理调用同一个视频判定函数。每个引擎用验证折的 5 段视频预热，独立测试时交替先后顺序。每份引擎分别打开同一段已从 ZIP 读取的编码视频，计入两遍解码、按 PTS 抽帧、缩放和归一化、CPU 与 GPU 之间的传输、TensorRT 前向计算以及片段聚合和判定。报告按片段给出耗时百分位汇总，并用各引擎的累计片段耗时计算片段每秒和抽样帧每秒。ZIP 读取、引擎加载、预热和报告写入在计时区间外。
+全链路复测与本地推理调用同一个视频判定函数。每个引擎用验证折的 5 段视频预热，独立测试时交替先后顺序。每份引擎分别打开同一段已从 ZIP 读取的编码视频，计入单遍解码、按 PTS 抽帧、缩放和归一化、CPU 与 GPU 之间的传输、TensorRT 前向计算以及片段聚合和判定。报告按片段给出耗时百分位汇总，并用各引擎的累计片段耗时计算片段每秒和抽样帧每秒。ZIP 读取、引擎加载、预热和报告写入在计时区间外。
+
+单遍解码暂存当前视频的原始解码帧，用最后一帧的真实 PTS 确定终点，按原时间分箱取样，随后释放未选中的原始帧。峰值内存随单段视频的解码帧数和分辨率增长。
+
+```powershell
+$test = @('--archive', $archive, '--engine-report', $engineReport)
+& $python -X utf8 .\infer_stanford.py profile @test --decode-passes 2 --report '.\work\stanford-fp16-two-pass.json'
+& $python -X utf8 .\infer_stanford.py profile @test --decode-passes 1 --report '.\work\stanford-fp16-single-pass.json'
+& $python -X utf8 .\infer_stanford.py benchmark-decode @test --report '.\work\stanford-fp16-decode-comparison.json'
+```
+
+`profile` 报告每段的解码和抽帧、预处理、输入上传、GPU 推理和输出回传耗时。GPU 推理使用 CUDA Events，传输边界显式同步。使用 `benchmark-decode` 比较同一个 FP16 引擎处理同一视频的两种方式，该入口用普通推理路径计时，并在计时区间外逐帧核对 PTS 和归一化输入。两遍解码保留用于复核。

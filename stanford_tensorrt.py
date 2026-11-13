@@ -4,6 +4,7 @@ import json
 import subprocess
 from collections import Counter
 from pathlib import Path
+from time import perf_counter
 
 import onnx
 import torch
@@ -91,6 +92,22 @@ class TensorRTForward:
             self.input.copy_(image)
             self.enqueue()
             return self.output[0].cpu()
+
+    def profile_predict(self, image):
+        with torch.cuda.stream(self.stream):
+            started = perf_counter()
+            self.input.copy_(image)
+            self.stream.synchronize()
+            uploaded = perf_counter()
+            self.start.record(self.stream)
+            self.enqueue()
+            self.end.record(self.stream)
+            self.end.synchronize()
+            inference = self.start.elapsed_time(self.end) / 1000
+            download_started = perf_counter()
+            scores = self.output[0].cpu()
+            download = perf_counter() - download_started
+        return scores, uploaded - started, inference, download
 
     def run(self, image):
         self.input.copy_(image)
