@@ -1,5 +1,4 @@
 import argparse
-import hashlib
 import json
 import platform
 import tempfile
@@ -16,18 +15,13 @@ from onnxruntime.quantization.shape_inference import quant_pre_process
 
 from benchmark_echo import WARMUP_FRAMES, latency_summary, preprocess
 from edge_onnx import OnnxForward, load_locked
-from evaluate_echo import decision, stanford_samples, summarize
+from evaluate_echo import decision, file_digest, stanford_samples, summarize
 from train_echo import WEIGHTS
 from train_echonet_views import VIEWS
 
 
 CPU_THREADS = 1
 CALIBRATION_CLIPS_PER_CLASS = 80
-
-
-def file_digest(path):
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def stanford_metadata(args):

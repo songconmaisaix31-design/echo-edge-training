@@ -49,3 +49,15 @@ $edge = @('--archive', $archive, '--checkpoint', $checkpoint, '--policy', $locke
 量化用固定随机种子从原始验证折 `1` 各抽取 80 段 A4C 和 PSAX，复用正式预处理和抽帧，对卷积和矩阵乘法采用静态 S8S8 QDQ、逐通道权重和 MinMax 校准。两份模型保留 FP32 输入与输出。 [ONNX Runtime 量化说明](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html)
 
 对照入口核对模型来源、固定阈值、量化节点和实际运行的整数算子。原始测试折 `0` 每个抽样帧送入两份模型，按各帧 softmax 平均值决定片段类别。报告文件大小和 SHA-256、片段级混淆矩阵及召回率，以及 CPU 单线程、batch 1 各预热 40 次后的逐帧模型执行耗时。解码、预处理和输入复制不计入模型执行耗时，预处理单独报告。报告同时记录 FP32 与 PyTorch 的输出偏差和预测分歧。
+
+## Stanford TensorRT FP32 与 FP16
+
+使用 CUDA 13 PyTorch 环境，安装本节所用的 TensorRT 版本 `tensorrt-cu13==10.16.1.11` 和导出依赖。将 `$fp32` 指向对应锁定 checkpoint 的 FP32 ONNX。
+
+```powershell
+& $python -m pip install tensorrt-cu13==10.16.1.11 onnx==1.22.0 onnxscript==0.7.2 onnxruntime==1.27.0
+& $python -X utf8 .\stanford_tensorrt.py --archive $archive --checkpoint $checkpoint `
+  --policy $locked --onnx $fp32 --output-dir '.\work\stanford-tensorrt'
+```
+
+同一 FP32 ONNX 构建两份 TensorRT 引擎，两份均关闭 TF32，FP16 引擎允许使用半精度算子并保留 FP32 输入输出。输出目录包含两份序列化引擎和 JSON 报告，报告记录构建和实测所使用的 GPU 与 TensorRT 版本。独立测试复用原始折 `0` 的抽帧与片段聚合。两份引擎均在 CUDA 单流上逐帧执行，每份预热 40 次，通过 CUDA Events 记录 GPU 推理 P50、P95 和 P99。解码、预处理和 CPU 与 GPU 之间的复制时间不参与计时。 [NVIDIA TensorRT 计时方法](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/measurement-techniques.html)

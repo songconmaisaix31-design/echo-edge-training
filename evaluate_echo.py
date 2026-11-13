@@ -21,6 +21,11 @@ from train_echonet_views import (TEST_SPLITS, TRAIN_SPLITS, VAL_SPLITS, VIEWS, V
 PREPROCESSING = "ffmpeg_area_rgb_letterbox_224_imagenet"
 
 
+def file_digest(path):
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
 def checkpoint_model(path, device):
     with path.open("rb") as source:
         fingerprint = hashlib.file_digest(source, "sha256").hexdigest()
