@@ -171,7 +171,7 @@ def team_rows(args, checkpoint, labels, inference):
                 yield clip.patient, key, clip.device, row.mode or clip.mode, clip.site, row.targets, prediction
 
 
-def stanford_rows(args, checkpoint, inference):
+def stanford_samples(args, checkpoint, *, clips_per_class=None):
     required = {"train": list(TRAIN_SPLITS), "val": list(VAL_SPLITS), "test": list(TEST_SPLITS)}
     if checkpoint.get("source_splits") != required:
         raise ValueError("checkpoint 未记录 Stanford 第 0 次轮转的完整分组")
@@ -181,9 +181,14 @@ def stanford_rows(args, checkpoint, inference):
         if errors:
             raise ValueError(f"Stanford 文件清单有 {len(errors)} 项错误")
         verify_rotation(clips)
-        for path, view, split, _, _ in clips:
-            if split not in required[args.split]:
-                continue
+        selected = [clip for clip in clips if clip[2] in required[args.split]]
+        if clips_per_class is not None:
+            if args.split != "val":
+                raise ValueError("校准抽样仅使用验证折")
+            rng = random.Random(42)
+            selected = [clip for view in VIEWS
+                        for clip in rng.sample([clip for clip in selected if clip[1] == view], clips_per_class)]
+        for path, view, _, _, _ in selected:
             with open_avi(archive, path) as source:
                 stream = source.streams.video[0]
                 stream.codec_context.thread_count = 1
@@ -195,8 +200,13 @@ def stanford_rows(args, checkpoint, inference):
                 stream = source.streams.video[0]
                 stream.codec_context.thread_count = 1
                 frames = samples_in_intervals(video_frames(source, stream), [row], [interval_bins(row, args)])
-                prediction, = inference.predict(frames, 1)
-            yield published_patient(path), path, "", "灰阶", "", row.targets, prediction
+                yield published_patient(path), path, row.targets, frames
+
+
+def stanford_rows(args, checkpoint, inference):
+    for patient, path, targets, frames in stanford_samples(args, checkpoint):
+        prediction, = inference.predict(frames, 1)
+        yield patient, path, "", "灰阶", "", targets, prediction
 
 
 def evaluate(args):

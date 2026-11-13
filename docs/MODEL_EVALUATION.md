@@ -32,3 +32,20 @@ Stanford 灰阶模型授权完成后，用 `--archive $archive` 代替 `--media`
 ```
 
 导出固定的 `[1,3,224,224]` RGB 输入及 `view_logits`、`quality_logits` 两个输出。模型内保存标签顺序、抽样、预处理和冻结阈值。核对相同真实帧上的输出偏差、逐帧类别、片段级判定和质量放行结果。目录或 ZIP 中的所有影像使用同一时间区间。区间不同的代表性影像应逐个执行。报告每个视频的解码与抽样、预处理、传输、运行时执行和完整链路的延迟及吞吐。Windows 显存采样包含同进程中的 PyTorch 参考模型和 ONNX Runtime。原有 ImageNet 测速结果单列。
+
+## Stanford 单头导出、量化和独立对照
+
+在装有 PyTorch 和仓库依赖的 CPU 环境安装 `onnx==1.22.0`、`onnxscript==0.7.2` 和 `onnxruntime==1.27.0`。用对应 checkpoint 的验证冻结文件导出同样的固定输入，单头只输出 `view_logits`。
+
+```powershell
+$fp32 = '.\work\stanford-fp32.onnx'
+$int8 = '.\work\stanford-int8.onnx'
+& $python -X utf8 .\edge_onnx.py export --checkpoint $checkpoint --policy $locked --onnx $fp32
+$edge = @('--archive', $archive, '--checkpoint', $checkpoint, '--policy', $locked, '--fp32', $fp32, '--int8', $int8)
+& $python -X utf8 .\stanford_edge.py quantize @edge
+& $python -X utf8 .\stanford_edge.py compare @edge --report '.\work\stanford-fp32-int8-test.json'
+```
+
+量化用固定随机种子从原始验证折 `1` 各抽取 80 段 A4C 和 PSAX，复用正式预处理和抽帧，对卷积和矩阵乘法采用静态 S8S8 QDQ、逐通道权重和 MinMax 校准。两份模型保留 FP32 输入与输出。 [ONNX Runtime 量化说明](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html)
+
+对照入口核对模型来源、固定阈值、量化节点和实际运行的整数算子。原始测试折 `0` 每个抽样帧送入两份模型，按各帧 softmax 平均值决定片段类别。报告文件大小和 SHA-256、片段级混淆矩阵及召回率，以及 CPU 单线程、batch 1 各预热 40 次后的逐帧模型执行耗时。解码、预处理和输入复制不计入模型执行耗时，预处理单独报告。报告同时记录 FP32 与 PyTorch 的输出偏差和预测分歧。

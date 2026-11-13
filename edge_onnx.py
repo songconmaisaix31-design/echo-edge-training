@@ -22,7 +22,10 @@ from train_echo import (IGNORE, MEDIA_SUFFIXES, TASKS, WEIGHTS, Segment, interva
 
 
 INPUT_SHAPE = (1, 3, 224, 224)
-OUTPUTS = ("view_logits", "quality_logits")
+
+
+def output_names(labels):
+    return tuple(f"{task}_logits" for task in labels)
 
 
 class WindowsGpuMemory:
@@ -66,11 +69,15 @@ class WindowsGpuMemory:
 def load_locked(args, device):
     model, checkpoint, labels, digest = checkpoint_model(args.checkpoint, device)
     policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
-    if tuple(labels) != TASKS or policy.get("checkpoint_sha256") != digest or policy.get("validated_on") != "val":
-        raise ValueError("需要团队双头 checkpoint 与来自同一 checkpoint 的验证集冻结文件")
-    return model, {"checkpoint_sha256": digest, "labels": {task: list(codes) for task, codes in labels.items()},
-                   "preprocessing": PREPROCESSING, "sampling": checkpoint["sampling"],
-                   "aggregation": "mean_frame_softmax", "policy": locked_policy(policy, labels)}
+    if policy.get("checkpoint_sha256") != digest or policy.get("validated_on") != "val":
+        raise ValueError("需要来自同一 checkpoint 的验证集冻结文件")
+    metadata = {"checkpoint_sha256": digest, "labels": {task: list(codes) for task, codes in labels.items()},
+                "preprocessing": PREPROCESSING, "sampling": checkpoint["sampling"],
+                "aggregation": "mean_frame_softmax", "policy": locked_policy(policy, labels)}
+    if "quality" not in labels:
+        metadata["source_splits"] = checkpoint["source_splits"]
+        metadata["validation_report_sha256"] = policy["validation_report_sha256"]
+    return model, metadata
 
 
 def export(args):
@@ -81,7 +88,7 @@ def export(args):
     with tempfile.TemporaryDirectory(dir=args.onnx.parent) as scratch:
         target = Path(scratch) / "model.onnx"
         torch.onnx.export(model, (torch.zeros(INPUT_SHAPE),), target, input_names=["images"],
-                          output_names=list(OUTPUTS), dynamo=True, external_data=False)
+                          output_names=list(output_names(metadata["labels"])), dynamo=True, external_data=False)
         graph = onnx.load(target)
         onnx.helper.set_model_props(graph, {"echo_edge": json.dumps(metadata, ensure_ascii=False)})
         onnx.checker.check_model(graph)
@@ -90,7 +97,7 @@ def export(args):
 
 
 class OnnxForward:
-    def __init__(self, path, device, metadata):
+    def __init__(self, path, device, metadata, *, threads=None, profiling=False):
         if device == "cuda":
             if not torch.cuda.is_available() or "CUDAExecutionProvider" not in ort.get_available_providers():
                 raise RuntimeError("CUDA 需要同环境中的 CUDA PyTorch 和 onnxruntime-gpu")
@@ -98,6 +105,12 @@ class OnnxForward:
             torch.backends.cuda.matmul.fp32_precision = "ieee"
             torch.backends.cudnn.conv.fp32_precision = "ieee"
         options = ort.SessionOptions()
+        if threads is not None:
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+        if profiling:
+            options.enable_profiling = True
+            options.profile_file_prefix = str(path.parent / "onnx-profile")
         if device == "cuda":
             options.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
         provider = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
@@ -108,18 +121,20 @@ class OnnxForward:
         stored = json.loads(self.session.get_modelmeta().custom_metadata_map["echo_edge"])
         inputs = self.session.get_inputs()
         outputs = self.session.get_outputs()
+        labels = metadata["labels"]
+        names = output_names(labels)
         if (stored != metadata or len(inputs) != 1 or inputs[0].name != "images" or tuple(inputs[0].shape) != INPUT_SHAPE
-                or inputs[0].type != "tensor(float)" or tuple(row.name for row in outputs) != OUTPUTS
-                or any(row.shape != [1, len(metadata["labels"][task])] or row.type != "tensor(float)"
-                       for task, row in zip(TASKS, outputs, strict=True))):
+                or inputs[0].type != "tensor(float)" or tuple(row.name for row in outputs) != names
+                or any(row.shape != [1, len(codes)] or row.type != "tensor(float)"
+                       for codes, row in zip(labels.values(), outputs, strict=True))):
             raise ValueError("ONNX 签名或固定模型元数据与锁定的 checkpoint 不一致")
         self.device = device
         self.provider = provider
         self.binding = self.session.io_binding()
         self.input = torch.empty(INPUT_SHAPE, device=device)
-        self.outputs = [torch.empty((1, len(metadata["labels"][task])), device=device) for task in TASKS]
+        self.outputs = [torch.empty((1, len(codes)), device=device) for codes in labels.values()]
         self.binding.bind_input("images", device, 0, np.float32, INPUT_SHAPE, self.input.data_ptr())
-        for name, tensor in zip(OUTPUTS, self.outputs, strict=True):
+        for name, tensor in zip(names, self.outputs, strict=True):
             self.binding.bind_output(name, device, 0, np.float32, tuple(tensor.shape), tensor.data_ptr())
 
     def sync(self):
@@ -197,6 +212,8 @@ def verify(args):
     if args.report.exists():
         raise FileExistsError(args.report)
     expected, metadata = load_locked(args, args.device)
+    if tuple(metadata["labels"]) != TASKS:
+        raise ValueError("verify --media 需要团队双头模型")
     actual = OnnxForward(args.onnx, args.device, metadata)
     args.scratch.mkdir(parents=True, exist_ok=True)
     files = []
@@ -239,7 +256,7 @@ def verify(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="导出并核对冻结的团队双头 ONNX 模型")
+    parser = argparse.ArgumentParser(description="导出冻结的 ONNX 模型并核对团队双头模型")
     commands = parser.add_subparsers(dest="action", required=True)
     exporting = commands.add_parser("export")
     checking = commands.add_parser("verify")
