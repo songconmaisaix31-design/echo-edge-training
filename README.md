@@ -36,6 +36,8 @@ nvidia-smi
 
 使用斯坦福公开研究数据时，见 [EchoNet-Pediatric 训练准备](docs/ECHONET_PEDIATRIC.md)。
 
+第 01 批资料见[批量清洗与预处理报告](docs/batch-01/cleaning-report.md)和[儿童心脏超声专家交接](docs/batch-01/expert-handoff.md)。[团队抽帧索引](docs/batch-01/team-selected-frames.csv)记录批内编号、源帧号和相对时间。获准访问影像后，可按索引定位原始画面。
+
 把数据放在院方允许的目录。下面使用仓库内被 Git 忽略的 `data/` 作为路径示例。`$media` 可以指向影像目录、ZIP 或单个影像。`$labels` 指向填好的工作簿。Excel `relative_path` 从影像目录或 ZIP 根目录填写。
 
 ## 先检查，再训练
