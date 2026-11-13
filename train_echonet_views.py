@@ -14,8 +14,10 @@ from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
 import av
+import numpy as np
 import torch
 from av.video.reformatter import VideoReformatter
+from PIL import Image
 from torch import nn
 from torchvision.models import mobilenet_v3_small
 
@@ -186,10 +188,57 @@ def train_views(archive, args, prepared):
     torch.set_num_threads(1)
     torch.manual_seed(args.seed)
     torch.hub.set_dir(str(args.cache_dir / "torch-hub"))
-    args.run_dir.mkdir(parents=True, exist_ok=False)
+    if args.resume:
+        if not (args.run_dir / "last.pt").is_file():
+            raise ValueError("恢复时必须指定已有上一完整轮状态的训练目录")
+    else:
+        args.run_dir.mkdir(parents=True, exist_ok=False)
     train_splits = set(args.train_splits)
     val_splits = set(args.val_splits)
     records = defaultdict(list)
+    metadata = {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits),
+                                 "test": list(TEST_SPLITS)}, "initialization": "imagenet1k_v1"}
+    labels = {"view": {view: {"name": view} for view in VIEWS}}
+    if args.existing_frame_cache is not None:
+        count = 0
+        spot_checks = {}
+        for (path, _, split, _, _), segment, _, expected in prepared:
+            if split in train_splits | val_splits:
+                role = "train" if split in train_splits else "val"
+                patient = published_patient(path)
+                records[role].extend((index, segment.targets, patient) for index in range(count, count + expected))
+                if count // 14_000 not in spot_checks:
+                    spot_checks[count // 14_000] = (path, segment, count, expected)
+                count += expected
+        print(f"核验并读取 {count} 张现有缓存帧", flush=True)
+        pixels = torch.empty((count, 224, 224, 3), dtype=torch.uint8)
+        with closing(sqlite3.connect(args.existing_frame_cache.resolve().as_uri() + "?mode=ro", uri=True)) as cache:
+            if cache.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                raise ValueError("现有 SQLite 抽帧缓存完整性检查失败")
+            if cache.execute("SELECT count(*), min(id), max(id) FROM frames").fetchone() != (count, 1, count):
+                raise ValueError("现有抽帧缓存与预检数量或顺序不一致")
+            array = pixels.numpy()
+            for key, png in cache.execute("SELECT id, png FROM frames ORDER BY id"):
+                with Image.open(io.BytesIO(png)) as image:
+                    if image.mode != "RGB" or image.size != (224, 224):
+                        raise ValueError("现有抽帧缓存的格式与训练配置不一致")
+                    array[key - 1] = np.asarray(image)
+        for path, segment, start, expected in spot_checks.values():
+            with open_avi(archive, path) as container:
+                stream = container.streams.video[0]
+                stream.codec_context.thread_count = 1
+                samples = samples_in_intervals(video_frames(container, stream), [segment], [interval_bins(segment, args)])
+                scaler = VideoReformatter()
+                for cached, (_, frame) in zip(array[start:start + expected], samples, strict=True):
+                    if not np.array_equal(cached, np.asarray(resize_and_pad(frame, scaler))):
+                        raise ValueError("缓存抽帧与同一归档重解码的结果不一致")
+        with args.existing_frame_cache.open("rb") as source:
+            cache_digest = hashlib.file_digest(source, "sha256").hexdigest()
+        metadata["frame_cache_sha256"] = cache_digest
+        print(f"缓存已读入内存，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
+        fit_model(args, records, labels, ViewModel(weights=None) if args.resume else ViewModel(),
+                  metadata, pixels.permute(0, 3, 1, 2), resumable=True)
+        return
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=args.cache_dir) as scratch, closing(sqlite3.connect(
             Path(scratch) / "frames.sqlite")) as frame_cache:
@@ -215,11 +264,9 @@ def train_views(archive, args, prepared):
             if count != expected:
                 raise ValueError(f"{path} 的实际抽帧数量与预检不一致")
         frame_cache.commit()
-        labels = {"view": {view: {"name": view} for view in VIEWS}}
         print(f"抽帧完成，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
-        fit_model(args, records, labels, ViewModel(),
-                  {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits),
-                                     "test": list(TEST_SPLITS)}, "initialization": "imagenet1k_v1"}, frame_cache)
+        fit_model(args, records, labels, ViewModel(weights=None) if args.resume else ViewModel(),
+                  metadata, frame_cache, resumable=True)
 
 
 def main():
@@ -235,6 +282,8 @@ def main():
     parser.add_argument("--max-frames-per-clip", dest="max_frames_per_segment", type=int, default=8)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--existing-frame-cache", type=Path, help="同一归档及抽帧参数生成的完整 SQLite 缓存")
+    parser.add_argument("--resume", action="store_true", help="从该运行目录的上一完整轮恢复")
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--head-only-epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=8)

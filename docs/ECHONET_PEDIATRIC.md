@@ -30,6 +30,8 @@ $python = '.\.venv\Scripts\python.exe'
   --stanford-authorization-confirmed --patient-grouping-confirmed
 ```
 
+每轮结束后，程序保存 `last.pt`，其中包含最近一轮的模型、优化器、AMP scaler 和抽样状态。训练中断后，使用原命令和相同的 `--run-dir`、原始归档、抽样参数，再加 `--resume` 从最近完成的一轮继续。`best.pt` 始终按验证集 Macro-F1 选出，用于冻结和独立测试。
+
 ## 儿童心超专家需要确认
 
 准备首批人工复核时，使用 [20 段人工复核流程](DOCTOR_REVIEW.md)。
