@@ -674,7 +674,7 @@ def preflight(args):
     return TrainingInputs(labels, clips, segments, assignments)
 
 
-def run_epoch(model, loader, sizes, optimizer=None, scaler=None):
+def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
     training = optimizer is not None
     model.train(training)
     model.features.eval()
@@ -707,7 +707,7 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None):
     metrics = {"loss": float(loss_total.item() / len(loader))}
     if not math.isfinite(metrics["loss"]):
         raise FloatingPointError("训练或验证损失出现非有限值")
-    for task, matrix in zip(TASKS, matrices):
+    for task, matrix in zip(tasks, matrices):
         matrix = matrix.cpu()
         support = matrix.sum(dim=1)
         active = support > 0
@@ -716,41 +716,49 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None):
     return metrics
 
 
+def fit_model(args, records, labels, model, directory, checkpoint_metadata=None):
+    tasks = tuple(labels)
+    normalization = WEIGHTS.transforms()
+    loaders = {split: DataLoader(FrameDataset(records[split], normalization), batch_size=args.batch_size,
+                                 shuffle=split == "train", pin_memory=True) for split in ("train", "val")}
+    sizes = [len(labels[task]) for task in tasks]
+    model = model.to("cuda")
+    model.features.requires_grad_(False)
+    heads = [parameter for task in tasks for parameter in getattr(model, f"{task}_head").parameters()]
+    optimizer = torch.optim.AdamW([
+        {"params": heads, "lr": args.head_lr},
+        {"params": model.features.parameters(), "lr": args.backbone_lr},
+    ])
+    scaler = torch.amp.GradScaler("cuda")
+    history = []
+    best = -math.inf
+    for epoch in range(args.epochs):
+        if epoch == args.head_only_epochs:
+            model.features[-3:].requires_grad_(True)
+        training = run_epoch(model, loaders["train"], sizes, optimizer, scaler, tasks)
+        validation = run_epoch(model, loaders["val"], sizes, tasks=tasks)
+        score = sum(validation[task]["macro_f1"] for task in tasks) / len(tasks)
+        row = {"epoch": epoch + 1, "train": training, "val": validation}
+        history.append(row)
+        print(json.dumps(row, ensure_ascii=False), flush=True)
+        if score > best:
+            best = score
+            temporary = Path(directory) / "best.pt"
+            torch.save({"model": model.state_dict(), "labels": labels, "epoch": epoch + 1,
+                        "val_macro_f1": score, "preprocessing": "ffmpeg_area_rgb_letterbox_224_imagenet",
+                        **(checkpoint_metadata or {})}, temporary)
+            temporary.replace(args.run_dir / "best.pt")
+    (args.run_dir / "metrics.json").write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def train(args, inputs):
     args.run_dir.mkdir(parents=True, exist_ok=False)
     torch.manual_seed(args.seed)
     torch.hub.set_dir(str(args.cache_dir / "torch-hub"))
     with tempfile.TemporaryDirectory(dir=args.run_dir) as directory:
         records = prepare_frames(args, inputs.clips, inputs.segments, inputs.assignments, Path(directory))
-        normalization = WEIGHTS.transforms()
-        loaders = {split: DataLoader(FrameDataset(records[split], normalization), batch_size=args.batch_size,
-                                     shuffle=split == "train", pin_memory=True) for split in ("train", "val")}
         sizes = [len(inputs.labels[task]) for task in TASKS]
-        model = EchoModel(*sizes).to("cuda")
-        model.features.requires_grad_(False)
-        optimizer = torch.optim.AdamW([
-            {"params": list(model.view_head.parameters()) + list(model.quality_head.parameters()), "lr": args.head_lr},
-            {"params": model.features.parameters(), "lr": args.backbone_lr},
-        ])
-        scaler = torch.amp.GradScaler("cuda")
-        history = []
-        best = -math.inf
-        for epoch in range(args.epochs):
-            if epoch == args.head_only_epochs:
-                model.features[-3:].requires_grad_(True)
-            training = run_epoch(model, loaders["train"], sizes, optimizer, scaler)
-            validation = run_epoch(model, loaders["val"], sizes)
-            score = sum(validation[task]["macro_f1"] for task in TASKS) / len(TASKS)
-            row = {"epoch": epoch + 1, "train": training, "val": validation}
-            history.append(row)
-            print(json.dumps(row, ensure_ascii=False), flush=True)
-            if score > best:
-                best = score
-                temporary = Path(directory) / "best.pt"
-                torch.save({"model": model.state_dict(), "labels": inputs.labels, "epoch": epoch + 1,
-                            "val_macro_f1": score, "preprocessing": "ffmpeg_area_rgb_letterbox_224_imagenet"}, temporary)
-                temporary.replace(args.run_dir / "best.pt")
-        (args.run_dir / "metrics.json").write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory)
 
 
 def verify_logits(model, image, name):
