@@ -2,6 +2,17 @@
 
 RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质量模型的训练和推理。ESP32-S3 负责外设采集、OLED 显示、语音和振动提示，以及台架上的舵机控制。终端接线、开发顺序和实机验收见 [ESP32-S3 终端方案与任务](docs/ESP32_TERMINAL.md)。
 
+## 模型开发任务
+
+- [#7 回收团队标注并通过数据预检](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)
+- [#8 建立独立测试入口和评价报告](https://github.com/songconmaisaix31-design/echo-edge-training/issues/8)
+- [#9 训练 EchoNet-Pediatric A4C／PSAX 基线](https://github.com/songconmaisaix31-design/echo-edge-training/issues/9)，待 Stanford 确认训练和权重用途。
+- [#10 在 RTX 5060 微调团队切面与采集质量双头](https://github.com/songconmaisaix31-design/echo-edge-training/issues/10)，使用团队标注和独立测试入口。
+- [#11 导出 ONNX 并验证 RTX 5060 推理](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11)
+- [#12 将电脑推理结果接入 ESP32-S3 提示](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)
+
+## 电脑端处理
+
 电脑端支持从二维多帧 DICOM cine、AVI、MP4 或 MOV 读取原始时间戳和抽帧。FFmpeg 将图像等比例缩放并填充为 `224×224` RGB。训练入口先做数据预检，报告通过后初始化 CUDA 并开始微调。
 
 ## 环境要求
