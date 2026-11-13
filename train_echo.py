@@ -464,6 +464,22 @@ def interval_bins(row, args):
     )))
 
 
+def whole_video_samples(open_video, args):
+    with open_video() as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = 1
+        last_offset = None
+        for last_offset, _ in video_frames(container, stream):
+            pass
+    if last_offset is None:
+        raise ValueError("视频没有可解码帧")
+    interval = Segment("", "", 0, math.floor(last_offset) + 1, (IGNORE, IGNORE))
+    with open_video() as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = 1
+        yield from samples_in_intervals(video_frames(container, stream), [interval], [interval_bins(interval, args)])
+
+
 class FrameDataset(Dataset):
     def __init__(self, rows, normalization, frame_cache=None):
         self.rows = rows

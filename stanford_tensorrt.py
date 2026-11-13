@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import subprocess
 from collections import Counter
@@ -38,8 +39,12 @@ def build_engine(onnx_path, target, logger, *, fp16):
 
 
 class TensorRTForward:
-    def __init__(self, path, runtime, stream, *, fp16):
-        self.engine = runtime.deserialize_cuda_engine(path.read_bytes())
+    def __init__(self, path, runtime, stream, *, fp16, expected_digest=None):
+        serialized = path.read_bytes()
+        self.digest = hashlib.sha256(serialized).hexdigest()
+        if expected_digest is not None and self.digest != expected_digest:
+            raise ValueError(f"引擎摘要与验证报告不一致 {path.name}")
+        self.engine = runtime.deserialize_cuda_engine(serialized)
         if self.engine is None:
             raise RuntimeError(f"TensorRT 无法加载引擎 {path.name}")
         io = {self.engine.get_tensor_name(i) for i in range(self.engine.num_io_tensors)}
@@ -77,11 +82,20 @@ class TensorRTForward:
             raise RuntimeError(f"TensorRT 无法绑定张量 {name}")
         return tensor
 
+    def enqueue(self):
+        if not self.context.execute_async_v3(self.stream.cuda_stream):
+            raise RuntimeError("TensorRT CUDA 推理失败")
+
+    def predict(self, image):
+        with torch.cuda.stream(self.stream):
+            self.input.copy_(image)
+            self.enqueue()
+            return self.output[0].cpu()
+
     def run(self, image):
         self.input.copy_(image)
         self.start.record(self.stream)
-        if not self.context.execute_async_v3(self.stream.cuda_stream):
-            raise RuntimeError("TensorRT CUDA 推理失败")
+        self.enqueue()
         self.end.record(self.stream)
         self.end.synchronize()
         elapsed = self.start.elapsed_time(self.end) / 1000

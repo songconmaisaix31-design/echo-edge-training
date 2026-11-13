@@ -61,3 +61,16 @@ $edge = @('--archive', $archive, '--checkpoint', $checkpoint, '--policy', $locke
 ```
 
 同一 FP32 ONNX 构建两份 TensorRT 引擎，两份均关闭 TF32，FP16 引擎允许使用半精度算子并保留 FP32 输入输出。输出目录包含两份序列化引擎和 JSON 报告，报告记录构建和实测所使用的 GPU 与 TensorRT 版本。独立测试复用原始折 `0` 的抽帧与片段聚合。两份引擎均在 CUDA 单流上逐帧执行，每份预热 40 次，通过 CUDA Events 记录 GPU 推理 P50、P95 和 P99。解码、预处理和 CPU 与 GPU 之间的复制时间不参与计时。 [NVIDIA TensorRT 计时方法](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/measurement-techniques.html)
+
+## 电脑端视频推理与全链路复测
+
+使用上一步导出的 TensorRT 测试报告，将报告和对应的引擎文件放在同一目录。电脑端默认加载 FP16 引擎，校验引擎 SHA-256，并用报告中的预处理、时间抽样和锁定阈值判定整段视频。输入为本地 AVI、MP4 或 MOV，标准输出为单条 JSON。传 `--precision fp32` 可指定 FP32。
+
+```powershell
+$engineReport = '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-test.json'
+& $python -X utf8 .\infer_stanford.py predict --engine-report $engineReport --video $video
+& $python -X utf8 .\infer_stanford.py benchmark --engine-report $engineReport --archive $archive `
+  --report '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-pipeline.json'
+```
+
+全链路复测与本地推理调用同一个视频判定函数。每个引擎用验证折的 5 段视频预热，独立测试时交替先后顺序。每份引擎分别打开同一段已从 ZIP 读取的编码视频，计入两遍解码、按 PTS 抽帧、缩放和归一化、CPU 与 GPU 之间的传输、TensorRT 前向计算以及片段聚合和判定。报告按片段给出耗时百分位汇总，并用各引擎的累计片段耗时计算片段每秒和抽样帧每秒。ZIP 读取、引擎加载、预热和报告写入在计时区间外。

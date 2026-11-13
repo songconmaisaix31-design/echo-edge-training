@@ -12,8 +12,8 @@ import torch
 from av.video.reformatter import VideoReformatter
 
 from benchmark_echo import normalize_image, resize_and_pad
-from train_echo import (IGNORE, TASKS, WEIGHTS, EchoModel, Segment, interval_bins, local_media, open_archive,
-                        read_annotations, samples_in_intervals, selected_interval_frames, video_frames)
+from train_echo import (IGNORE, TASKS, WEIGHTS, EchoModel, interval_bins, local_media, open_archive,
+                        read_annotations, selected_interval_frames, whole_video_samples)
 from train_echonet_views import (TEST_SPLITS, TRAIN_SPLITS, VAL_SPLITS, VIEWS, ViewModel, open_avi, published_patient,
                                  read_sources, verify_rotation)
 
@@ -176,36 +176,30 @@ def team_rows(args, checkpoint, labels, inference):
                 yield clip.patient, key, clip.device, row.mode or clip.mode, clip.site, row.targets, prediction
 
 
-def stanford_samples(args, checkpoint, *, clips_per_class=None):
+def stanford_members(archive, split, checkpoint, *, clips_per_class=None):
     required = {"train": list(TRAIN_SPLITS), "val": list(VAL_SPLITS), "test": list(TEST_SPLITS)}
     if checkpoint.get("source_splits") != required:
         raise ValueError("checkpoint 未记录 Stanford 第 0 次轮转的完整分组")
+    errors = []
+    clips = read_sources(archive, errors)
+    if errors:
+        raise ValueError(f"Stanford 文件清单有 {len(errors)} 项错误")
+    verify_rotation(clips)
+    selected = [clip for clip in clips if clip[2] in required[split]]
+    if clips_per_class is not None:
+        if split != "val":
+            raise ValueError("校准抽样仅使用验证折")
+        rng = random.Random(42)
+        selected = [clip for view in VIEWS
+                    for clip in rng.sample([clip for clip in selected if clip[1] == view], clips_per_class)]
+    return [(published_patient(path), path, VIEWS.index(view)) for path, view, _, _, _ in selected]
+
+
+def stanford_samples(args, checkpoint, *, clips_per_class=None):
     with ZipFile(args.archive, metadata_encoding="utf-8") as archive:
-        errors = []
-        clips = read_sources(archive, errors)
-        if errors:
-            raise ValueError(f"Stanford 文件清单有 {len(errors)} 项错误")
-        verify_rotation(clips)
-        selected = [clip for clip in clips if clip[2] in required[args.split]]
-        if clips_per_class is not None:
-            if args.split != "val":
-                raise ValueError("校准抽样仅使用验证折")
-            rng = random.Random(42)
-            selected = [clip for view in VIEWS
-                        for clip in rng.sample([clip for clip in selected if clip[1] == view], clips_per_class)]
-        for path, view, _, _, _ in selected:
-            with open_avi(archive, path) as source:
-                stream = source.streams.video[0]
-                stream.codec_context.thread_count = 1
-                offsets = [offset for offset, _ in video_frames(source, stream)]
-            if not offsets:
-                raise ValueError("Stanford 评估片段没有可解码帧")
-            row = Segment(path, path, 0, math.floor(offsets[-1]) + 1, (VIEWS.index(view),))
-            with open_avi(archive, path) as source:
-                stream = source.streams.video[0]
-                stream.codec_context.thread_count = 1
-                frames = samples_in_intervals(video_frames(source, stream), [row], [interval_bins(row, args)])
-                yield published_patient(path), path, row.targets, frames
+        for patient, path, target in stanford_members(archive, args.split, checkpoint, clips_per_class=clips_per_class):
+            frames = whole_video_samples(lambda path=path: open_avi(archive, path), args)
+            yield patient, path, (target,), frames
 
 
 def stanford_rows(args, checkpoint, inference):
