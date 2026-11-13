@@ -19,14 +19,14 @@ $python = '.\.venv\Scripts\python.exe'
   --report '.\work\echonet_views_preflight.json' --preflight-only
 ```
 
-预检检查每个 AVI 与对应 `FileList.csv`、原始 `Split` 值、视频解码和按呈现时间抽帧。报告按两类切面汇总原始 `Split`，数据错误会定位到文件和 CSV 行。通过只读检查时退出码为 `0`，报告中的 `training_readiness` 仍会列出开训缺项。
+预检检查每个 AVI 与对应 `FileList.csv`、原始 `Split` 值、视频解码和按呈现时间抽帧。用发布方的匿名患儿编号计算原始折号，并按第 0 次轮转验证训练、验证、测试分别为 6,354、798、658 段。报告按切面汇总原始 `Split`，保留患儿数和片段数。通过只读检查时退出码为 `0`，报告中的 `training_readiness` 列出开训缺项。 [分组算法](https://github.com/echonet/rv-internal/blob/master/scripts/process_pediatric.py#L152-L155) · [轮转划分](https://github.com/echonet/rv-internal/blob/master/scripts/cross_validate_pediatric.py#L20-L28)
 
-斯坦福授权范围和患儿级隔离确认后，由团队确定训练与验证使用哪些原始 `Split`。把已确认的原始数字分别放入 `$trainSplits` 和 `$valSplits` 数组。两个数组不得重叠，未选中的分组保留，不参与训练和验证。程序会再跑同一套预检，随后在 CUDA 上微调单分类头模型，输出 `best.pt`、验证 Macro-F1 和混淆矩阵。
+斯坦福授权范围和患儿级隔离确认后，训练使用原始 `Split 2–9`，验证使用 `1`，独立测试保留 `0`。程序会再跑同一套预检，随后在 CUDA 上微调单分类头模型。测试命令见 [独立评估与 ONNX 核对](MODEL_EVALUATION.md)。
 
 ```powershell
 & $python -X utf8 .\train_echonet_views.py --archive $archive `
   --report '.\work\echonet_views_preflight.json' --run-dir '.\runs\echonet-views-01' `
-  --cache-dir '.\work\cache' --train-splits $trainSplits --val-splits $valSplits `
+  --cache-dir '.\work\cache' `
   --stanford-authorization-confirmed --patient-grouping-confirmed
 ```
 

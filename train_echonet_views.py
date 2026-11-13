@@ -1,11 +1,15 @@
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
+import re
+import sqlite3
 import tempfile
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
@@ -21,12 +25,17 @@ from train_echo import WEIGHTS, Segment, fit_model, interval_bins, samples_in_in
 
 VIEWS = ("A4C", "PSAX")
 SOURCE_SPLITS = tuple(map(str, range(10)))
+TRAIN_SPLITS = SOURCE_SPLITS[2:]
+VAL_SPLITS = ("1",)
+TEST_SPLITS = ("0",)
+ROTATION_COUNTS = {"train": 6354, "val": 798, "test": 658}
+PUBLISHED_NAME = re.compile(r"(CR[0-9a-z]{7})-CR[0-9a-z]{7}-[0-9]{6}[.]avi", re.ASCII)
 
 
 class ViewModel(nn.Module):
-    def __init__(self):
+    def __init__(self, *, weights=WEIGHTS):
         super().__init__()
-        backbone = mobilenet_v3_small(weights=WEIGHTS)
+        backbone = mobilenet_v3_small(weights=weights)
         self.features = backbone.features
         self.pool = backbone.avgpool
         self.view_head = nn.Linear(backbone.classifier[0].in_features, len(VIEWS))
@@ -75,6 +84,28 @@ def open_avi(archive, path):
     return av.open(io.BytesIO(archive.read(path)))
 
 
+def published_patient(path):
+    matched = PUBLISHED_NAME.fullmatch(PurePosixPath(path).name)
+    if matched is None:
+        raise ValueError("发布文件名缺少符合格式的匿名患儿编号")
+    return matched[1]
+
+
+def verify_rotation(clips):
+    patients = {}
+    counts = Counter()
+    for path, _, split, _, _ in clips:
+        patient = published_patient(path)
+        fold = str(int(hashlib.sha1(patient.encode("utf-8"), usedforsecurity=False).hexdigest(), 16) % 10)
+        if split != fold or patients.setdefault(patient, split) != split:
+            raise ValueError("原始 Split 与发布方患儿分组算法不一致")
+        counts["test" if split == "0" else "val" if split == "1" else "train"] += 1
+    if counts != ROTATION_COUNTS:
+        raise ValueError(f"第 0 次轮转片段数量与本批归档不一致：{dict(counts)}")
+    return {"clips": dict(counts), "patients": {role: sum(fold in folds for fold in patients.values())
+            for role, folds in {"train": TRAIN_SPLITS, "val": VAL_SPLITS, "test": TEST_SPLITS}.items()}}
+
+
 def inspect_avi(archive, clip, args):
     path, view, split, table, line = clip
     try:
@@ -95,6 +126,9 @@ def inspect_avi(archive, clip, args):
 def preflight(archive, args):
     errors = []
     clips = read_sources(archive, errors)
+    rotation = None
+    if not errors:
+        rotation = verify_rotation(clips)
     prepared = []
     with ThreadPoolExecutor(max_workers=4) as executor:
         for start in range(0, len(clips), 128):
@@ -114,10 +148,10 @@ def preflight(archive, args):
             errors.append({"view": view, "error": "缺少可用的切面视频"})
 
     train_splits, val_splits = set(args.train_splits or ()), set(args.val_splits or ())
-    roles = {"train": train_splits, "val": val_splits}
+    roles = {"train": train_splits, "val": val_splits, "test": set(TEST_SPLITS)}
     if train_splits or val_splits:
-        if not train_splits or not val_splits or train_splits & val_splits:
-            errors.append({"error": "训练和验证均须指定原始 Split，且两者不得重叠"})
+        if train_splits != set(TRAIN_SPLITS) or val_splits != set(VAL_SPLITS):
+            errors.append({"error": "只支持发布方第 0 次轮转：训练 2–9、验证 1、测试 0"})
         for role, selection in roles.items():
             for view in VIEWS:
                 if not counts[view].keys() & selection:
@@ -125,7 +159,7 @@ def preflight(archive, args):
     blockers = []
     if not args.stanford_authorization_confirmed:
         blockers.append("尚未确认斯坦福授权覆盖拟进行的训练及权重用途")
-    if not args.patient_grouping_confirmed:
+    if rotation is None or not args.patient_grouping_confirmed:
         blockers.append("尚未核实原始 Split 的患儿级隔离")
     if not train_splits or not val_splits:
         blockers.append("尚未指定哪些原始 Split 用于训练和验证")
@@ -134,6 +168,7 @@ def preflight(archive, args):
         "training_readiness": "blocked" if errors or blockers else "ready",
         "sample_fps": args.sample_fps, "max_frames_per_clip": args.max_frames_per_segment,
         "source_split_counts": {view: dict(sorted(counts[view].items())) for view in VIEWS},
+        "verified_rotation_zero": rotation,
         "selected_split_roles": {role: sorted(selection) for role, selection in roles.items()},
         "decoded_clips": len(prepared), "decoded_frames": sum(item[2] for item in prepared),
         "frames_selected_for_preprocessing": sum(item[3] for item in prepared),
@@ -155,27 +190,35 @@ def train_views(archive, args, prepared):
     train_splits = set(args.train_splits)
     val_splits = set(args.val_splits)
     records = defaultdict(list)
-    with tempfile.TemporaryDirectory(dir=args.run_dir) as scratch:
-        for clip_number, ((path, _, source_split, _, _), segment, _, expected) in enumerate(prepared):
+    with tempfile.TemporaryDirectory(dir=args.run_dir) as scratch, closing(sqlite3.connect(
+            Path(scratch) / "frames.sqlite")) as frame_cache:
+        frame_cache.execute("CREATE TABLE frames (id INTEGER PRIMARY KEY, png BLOB NOT NULL)")
+        print("开始按锁定的训练和验证分组抽帧", flush=True)
+        for (path, _, source_split, _, _), segment, _, expected in prepared:
             if source_split not in train_splits | val_splits:
                 continue
             role = "train" if source_split in train_splits else "val"
             reformatter = VideoReformatter()
             count = 0
+            patient = published_patient(path)
             with open_avi(archive, path) as container:
                 stream = container.streams.video[0]
                 stream.codec_context.thread_count = 1
                 samples = samples_in_intervals(video_frames(container, stream), [segment], [interval_bins(segment, args)])
                 for _, frame in samples:
-                    output = Path(scratch) / f"{clip_number}_{count}.png"
-                    resize_and_pad(frame, reformatter).save(output, compress_level=1)
-                    records[role].append((output, segment.targets))
+                    output = io.BytesIO()
+                    resize_and_pad(frame, reformatter).save(output, format="PNG", compress_level=1)
+                    key = frame_cache.execute("INSERT INTO frames (png) VALUES (?)", (output.getvalue(),)).lastrowid
+                    records[role].append((key, segment.targets, patient))
                     count += 1
             if count != expected:
                 raise ValueError(f"{path} 的实际抽帧数量与预检不一致")
+        frame_cache.commit()
         labels = {"view": {view: {"name": view} for view in VIEWS}}
+        print(f"抽帧完成，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
         fit_model(args, records, labels, ViewModel(), scratch,
-                  {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits)}})
+                  {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits),
+                                     "test": list(TEST_SPLITS)}, "initialization": "imagenet1k_v1"}, frame_cache)
 
 
 def main():
@@ -183,8 +226,8 @@ def main():
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--preflight-only", action="store_true")
-    parser.add_argument("--train-splits", choices=SOURCE_SPLITS, nargs="+")
-    parser.add_argument("--val-splits", choices=SOURCE_SPLITS, nargs="+")
+    parser.add_argument("--train-splits", choices=SOURCE_SPLITS, nargs="+", default=TRAIN_SPLITS)
+    parser.add_argument("--val-splits", choices=SOURCE_SPLITS, nargs="+", default=VAL_SPLITS)
     parser.add_argument("--stanford-authorization-confirmed", action="store_true")
     parser.add_argument("--patient-grouping-confirmed", action="store_true")
     parser.add_argument("--sample-fps", type=float, default=10)
@@ -198,6 +241,8 @@ def main():
     parser.add_argument("--head-lr", type=float, default=3e-4)
     parser.add_argument("--backbone-lr", type=float, default=3e-5)
     args = parser.parse_args()
+    if not args.preflight_only and not args.stanford_authorization_confirmed:
+        parser.error("开训前需要确认斯坦福书面许可覆盖训练与权重用途")
     if args.report.suffix.lower() != ".json" or args.report.resolve() == args.archive.resolve():
         parser.error("--report 需要独立的 JSON 输出路径")
     if args.run_dir is not None and args.report.resolve().is_relative_to(args.run_dir.resolve()):

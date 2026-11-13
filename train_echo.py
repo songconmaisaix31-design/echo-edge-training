@@ -1,9 +1,12 @@
 import argparse
+import hashlib
+import io
 import json
 import math
 import random
 import shutil
 import tempfile
+import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from contextlib import closing, contextmanager, nullcontext
@@ -24,7 +27,7 @@ from pydicom.errors import InvalidDicomError
 from pydicom.misc import is_dicom
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
 from benchmark_echo import configure_video, normalize_image, preprocess, resize_and_pad
@@ -47,9 +50,9 @@ HEADERS = {
 
 
 class EchoModel(nn.Module):
-    def __init__(self, view_count, quality_count):
+    def __init__(self, view_count, quality_count, *, weights=WEIGHTS):
         super().__init__()
-        backbone = mobilenet_v3_small(weights=WEIGHTS)
+        backbone = mobilenet_v3_small(weights=weights)
         self.features = backbone.features
         self.pool = backbone.avgpool
         width = backbone.classifier[0].in_features
@@ -68,6 +71,9 @@ class Clip:
     split: str
     duration_ms: int | None
     row: int = 0
+    mode: str = ""
+    device: str = ""
+    site: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,7 @@ class Segment:
     end_ms: int
     targets: tuple[int, int]
     row: int = 0
+    mode: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,7 +164,9 @@ def clip_entry(row, where):
     path = string(row, "relative_path", where).replace("\\", "/")
     relative = PurePosixPath(path)
     split = string(row, "split", where, required=False)
-    string(row, "mode", where)
+    mode = string(row, "mode", where)
+    device = string(row, "device_model", where, required=False)
+    site = string(row, "site_code", where, required=False)
     if (not relative.name or relative.is_absolute() or ".." in relative.parts or ":" in path
             or relative.suffix.lower() not in MEDIA_SUFFIXES or relative.name.upper() == "DICOMDIR"):
         raise ValueError(f"{where} 的 relative_path 需要指向 DICOM cine、AVI、MP4 或 MOV 相对路径")
@@ -166,7 +175,7 @@ def clip_entry(row, where):
     duration = milliseconds(row, "duration_ms", where, required=False)
     if duration == 0:
         raise ValueError(f"{where} 的视频时长必须大于零")
-    return clip_id, study, Clip(relative.as_posix(), patient, split, duration, row["_row"])
+    return clip_id, study, Clip(relative.as_posix(), patient, split, duration, row["_row"], mode, device, site)
 
 
 def review_status(row, where):
@@ -274,7 +283,8 @@ def read_annotations(path, issue=None):
         confirmed[clip_id].append(Segment(key, clip_id, start, end, (IGNORE, IGNORE), row["_row"]))
         try:
             targets = segment_targets(row, where, label_indexes)
-            segments[clip_id].append(Segment(key, clip_id, start, end, targets, row["_row"]))
+            mode = string(row, "segment_mode", where, required=False)
+            segments[clip_id].append(Segment(key, clip_id, start, end, targets, row["_row"], mode))
         except ValueError as error:
             record("invalid_segment_label", error, "片段标注", row["_row"], **details)
     if not segments:
@@ -455,16 +465,19 @@ def interval_bins(row, args):
 
 
 class FrameDataset(Dataset):
-    def __init__(self, rows, normalization):
+    def __init__(self, rows, normalization, frame_cache=None):
         self.rows = rows
         self.normalization = normalization
+        self.frame_cache = frame_cache
 
     def __len__(self):
         return len(self.rows)
 
     def __getitem__(self, index):
         path, targets = self.rows[index]
-        with Image.open(path) as image:
+        source = path if self.frame_cache is None else io.BytesIO(self.frame_cache.execute(
+            "SELECT png FROM frames WHERE id = ?", (path,)).fetchone()[0])
+        with Image.open(source) as image:
             return normalize_image(image, self.normalization), torch.tensor(targets, dtype=torch.long)
 
 
@@ -483,7 +496,7 @@ def prepare_frames(args, clips, segments, assignments, scratch):
                 for index, frame in selected_interval_frames(path, rows, sample_bins):
                     target = scratch / f"{clip_index}_{index}_{counts[index]}.png"
                     resize_and_pad(frame, scaler).save(target, compress_level=1)
-                    records[split].append((target, rows[index].targets))
+                    records[split].append((target, rows[index].targets, clip.patient))
                     counts[index] += 1
             missing = [row.key for row, count in zip(rows, counts, strict=True) if count == 0]
             if missing:
@@ -716,11 +729,16 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
     return metrics
 
 
-def fit_model(args, records, labels, model, directory, checkpoint_metadata=None):
+def fit_model(args, records, labels, model, directory, checkpoint_metadata=None, frame_cache=None):
     tasks = tuple(labels)
     normalization = WEIGHTS.transforms()
-    loaders = {split: DataLoader(FrameDataset(records[split], normalization), batch_size=args.batch_size,
-                                 shuffle=split == "train", pin_memory=True) for split in ("train", "val")}
+    train_groups = Counter(group for _, _, group in records["train"])
+    sampler = WeightedRandomSampler([1 / train_groups[group] for _, _, group in records["train"]],
+                                    len(records["train"]), generator=torch.Generator().manual_seed(args.seed))
+    loaders = {split: DataLoader(FrameDataset([(path, target) for path, target, _ in records[split]], normalization,
+                                              frame_cache),
+                                 batch_size=args.batch_size, sampler=sampler if split == "train" else None,
+                                 pin_memory=True) for split in ("train", "val")}
     sizes = [len(labels[task]) for task in tasks]
     model = model.to("cuda")
     model.features.requires_grad_(False)
@@ -731,14 +749,24 @@ def fit_model(args, records, labels, model, directory, checkpoint_metadata=None)
     ])
     scaler = torch.amp.GradScaler("cuda")
     history = []
+    config = {key: getattr(args, key) for key in ("batch_size", "epochs", "head_only_epochs", "seed", "head_lr",
+                                                 "backbone_lr", "sample_fps", "max_frames_per_segment")}
+    config.update({"training_sampler": "inverse_patient_frame_count", "torch_version": str(torch.__version__),
+                   "device": torch.cuda.get_device_name(), "amp_dtype": "float16"})
+    (args.run_dir / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     best = -math.inf
     for epoch in range(args.epochs):
+        torch.cuda.reset_peak_memory_stats()
+        started = time.perf_counter()
         if epoch == args.head_only_epochs:
             model.features[-3:].requires_grad_(True)
         training = run_epoch(model, loaders["train"], sizes, optimizer, scaler, tasks)
         validation = run_epoch(model, loaders["val"], sizes, tasks=tasks)
         score = sum(validation[task]["macro_f1"] for task in tasks) / len(tasks)
-        row = {"epoch": epoch + 1, "train": training, "val": validation}
+        row = {"epoch": epoch + 1, "train": training, "val": validation,
+               "elapsed_seconds": time.perf_counter() - started,
+               "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
+               "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved()}
         history.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
         if score > best:
@@ -746,9 +774,13 @@ def fit_model(args, records, labels, model, directory, checkpoint_metadata=None)
             temporary = Path(directory) / "best.pt"
             torch.save({"model": model.state_dict(), "labels": labels, "epoch": epoch + 1,
                         "val_macro_f1": score, "preprocessing": "ffmpeg_area_rgb_letterbox_224_imagenet",
+                        "sampling": {"sample_fps": args.sample_fps, "max_frames_per_segment": args.max_frames_per_segment},
+                        "training_config": config,
                         **(checkpoint_metadata or {})}, temporary)
             temporary.replace(args.run_dir / "best.pt")
-    (args.run_dir / "metrics.json").write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        metrics = Path(directory) / "metrics.json"
+        metrics.write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        metrics.replace(args.run_dir / "metrics.json")
 
 
 def train(args, inputs):
@@ -758,7 +790,11 @@ def train(args, inputs):
     with tempfile.TemporaryDirectory(dir=args.run_dir) as directory:
         records = prepare_frames(args, inputs.clips, inputs.segments, inputs.assignments, Path(directory))
         sizes = [len(inputs.labels[task]) for task in TASKS]
-        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory)
+        with args.labels.open("rb") as source:
+            annotations_digest = hashlib.file_digest(source, "sha256").hexdigest()
+        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory,
+                  {"patient_splits": inputs.assignments, "annotations_sha256": annotations_digest,
+                   "initialization": "imagenet1k_v1"})
 
 
 def verify_logits(model, image, name):
