@@ -729,7 +729,7 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
     return metrics
 
 
-def fit_model(args, records, labels, model, directory, checkpoint_metadata=None, frame_cache=None):
+def fit_model(args, records, labels, model, checkpoint_metadata=None, frame_cache=None):
     tasks = tuple(labels)
     normalization = WEIGHTS.transforms()
     train_groups = Counter(group for _, _, group in records["train"])
@@ -771,14 +771,14 @@ def fit_model(args, records, labels, model, directory, checkpoint_metadata=None,
         print(json.dumps(row, ensure_ascii=False), flush=True)
         if score > best:
             best = score
-            temporary = Path(directory) / "best.pt"
+            temporary = args.run_dir / "best.pt.partial"
             torch.save({"model": model.state_dict(), "labels": labels, "epoch": epoch + 1,
                         "val_macro_f1": score, "preprocessing": "ffmpeg_area_rgb_letterbox_224_imagenet",
                         "sampling": {"sample_fps": args.sample_fps, "max_frames_per_segment": args.max_frames_per_segment},
                         "training_config": config,
                         **(checkpoint_metadata or {})}, temporary)
             temporary.replace(args.run_dir / "best.pt")
-        metrics = Path(directory) / "metrics.json"
+        metrics = args.run_dir / "metrics.json.partial"
         metrics.write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         metrics.replace(args.run_dir / "metrics.json")
 
@@ -792,7 +792,7 @@ def train(args, inputs):
         sizes = [len(inputs.labels[task]) for task in TASKS]
         with args.labels.open("rb") as source:
             annotations_digest = hashlib.file_digest(source, "sha256").hexdigest()
-        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory,
+        fit_model(args, records, inputs.labels, EchoModel(*sizes),
                   {"patient_splits": inputs.assignments, "annotations_sha256": annotations_digest,
                    "initialization": "imagenet1k_v1"})
 

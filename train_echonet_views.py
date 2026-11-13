@@ -190,7 +190,8 @@ def train_views(archive, args, prepared):
     train_splits = set(args.train_splits)
     val_splits = set(args.val_splits)
     records = defaultdict(list)
-    with tempfile.TemporaryDirectory(dir=args.run_dir) as scratch, closing(sqlite3.connect(
+    args.cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=args.cache_dir) as scratch, closing(sqlite3.connect(
             Path(scratch) / "frames.sqlite")) as frame_cache:
         frame_cache.execute("CREATE TABLE frames (id INTEGER PRIMARY KEY, png BLOB NOT NULL)")
         print("开始按锁定的训练和验证分组抽帧", flush=True)
@@ -216,7 +217,7 @@ def train_views(archive, args, prepared):
         frame_cache.commit()
         labels = {"view": {view: {"name": view} for view in VIEWS}}
         print(f"抽帧完成，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
-        fit_model(args, records, labels, ViewModel(), scratch,
+        fit_model(args, records, labels, ViewModel(),
                   {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits),
                                      "test": list(TEST_SPLITS)}, "initialization": "imagenet1k_v1"}, frame_cache)
 
