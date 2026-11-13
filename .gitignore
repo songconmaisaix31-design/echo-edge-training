@@ -3,6 +3,7 @@
 /work/
 /runs/
 /.cache/
+/node_modules/
 __pycache__/
 *.py[cod]
 .env
