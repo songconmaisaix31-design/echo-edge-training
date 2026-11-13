@@ -34,7 +34,7 @@ from echo_dicom import DicomCine, US_CINE_SOP_CLASSES, color_counts
 WEIGHTS = MobileNet_V3_Small_Weights.IMAGENET1K_V1
 TASKS = ("view", "quality")
 IGNORE = -100
-VIDEO_SUFFIXES = {".mp4", ".mov"}
+VIDEO_SUFFIXES = {".avi", ".mp4", ".mov"}
 DICOM_SUFFIXES = {".dcm", ".dicom", ".ima", ""}
 MEDIA_SUFFIXES = VIDEO_SUFFIXES | DICOM_SUFFIXES
 HEADERS = {
@@ -160,7 +160,7 @@ def clip_entry(row, where):
     string(row, "mode", where)
     if (not relative.name or relative.is_absolute() or ".." in relative.parts or ":" in path
             or relative.suffix.lower() not in MEDIA_SUFFIXES or relative.name.upper() == "DICOMDIR"):
-        raise ValueError(f"{where} 的 relative_path 需要指向 DICOM cine、MP4 或 MOV 相对路径")
+        raise ValueError(f"{where} 的 relative_path 需要指向 DICOM cine、AVI、MP4 或 MOV 相对路径")
     if split not in {"", "train", "val", "test"}:
         raise ValueError(f"{where} 的 split 可填写 train、val 或 test")
     duration = milliseconds(row, "duration_ms", where, required=False)
@@ -356,7 +356,7 @@ def open_archive(media):
         return ZipFile(media, metadata_encoding="utf-8")
     if media.is_file() and media.suffix.lower() in MEDIA_SUFFIXES:
         return nullcontext(None)
-    raise ValueError("--media 需要指向 DICOM cine、MP4/MOV 文件、影像目录或 ZIP 压缩包")
+    raise ValueError("--media 需要指向 DICOM cine、AVI/MP4/MOV 文件、影像目录或 ZIP 压缩包")
 
 
 @contextmanager
@@ -842,7 +842,7 @@ def verify_media(args):
             print(json.dumps({"video": name, "format": checked["format"], "source_frames": checked["source_frames"],
                               "preprocessed_frames": checked["preprocessed_frames"]}, ensure_ascii=False), flush=True)
     if not report:
-        raise ValueError("没有找到二维超声多帧 DICOM cine、MP4 或 MOV")
+        raise ValueError("没有找到二维超声多帧 DICOM cine、AVI、MP4 或 MOV")
     result = {"sample_fps": args.sample_fps, "device": torch.cuda.get_device_name(), "videos": report,
               "source_frames": sum(row["source_frames"] for row in report), "skipped_dicom": skipped,
               "decoded_frames": sum(row["decoded_frames"] for row in report),

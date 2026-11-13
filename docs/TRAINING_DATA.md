@@ -12,7 +12,7 @@
 
 - 优先交付原始二维超声多帧 DICOM cine，一段对应一个 DICOM 文件。可使用 `.dcm`、`.dicom`、`.ima` 或无扩展名的 DICOM 文件。对象应为超声多帧存储 SOP Class UID `1.2.840.10008.5.1.4.1.1.3.1`，或兼容的旧类 `1.2.840.10008.5.1.4.1.1.3`。`Modality` 应为 `US`，文件至少包含两帧。`DICOMDIR`、单帧影像、空间切片和增强型 3D/4D 超声对象均不适用于当前入口。
 - 保留 `NumberOfFrames`、`FrameIncrementPointer`、其指向的时间字段、传输语法、像素数据和颜色解释。`FrameTime` 为正数毫秒间隔。`FrameTimeVector` 的项数必须与帧数一致，首项为零，各项是非负的相邻帧时间增量，且至少一项为正。程序按时间字段计算相对于首帧的时间。播放帧率字段无法代替该时间信息。 [DICOM Cine Module](https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.5.html)
-- 保留原始画幅、灰阶和彩色多普勒像素。需要提交 MP4/MOV 时，导出件须保留可解码的视频流和单调呈现时间戳，工作簿按导出件重新核对时间。H.264/HEVC 封装在 DICOM 内的对象目前需要单独适配。
+- 保留原始画幅、灰阶和彩色多普勒像素。提交 AVI、MP4 或 MOV 时，文件须保留可解码的视频流和单调呈现时间戳，工作簿按交付文件核对时间。H.264/HEVC 封装在 DICOM 内的对象目前需要单独适配。
 - 交付前由数据提供方核查 DICOM 元数据、私有字段、烧录在像素中的文字、文件名、视频音轨和工作簿。使用院方生成的去标识编号，身份映射表保留在院内。去标识时保留采样所需的时间字段及彩色像素。 [DICOM 去标识规范](https://dicom.nema.org/medical/dicom/current/output/chtml/part15/sect_E.3.html)
 
 ## Excel 字段
