@@ -18,15 +18,34 @@ Windows 下枚举为 **COM4**（`1A86:55D3`）。不是原生 USB 口。
 
 ## 编译与烧录
 
-工具链是仓库自带的 `arduino-cli`（不依赖全局安装）：
+使用 Arduino CLI 1.6.0 和 Arduino-ESP32 3.3.12。从仓库根目录执行以下 PowerShell 命令。`arduino-cli` 可以是 PATH 中的命令，也可以替换成安装位置的完整路径。
 
-```bash
-./tools/bin/arduino-cli.exe --config-file ./tools/arduino-cli.yaml compile \
-  --fqbn "esp32:esp32:esp32s3:FlashMode=dio,FlashSize=16M,CDCOnBoot=default,PSRAM=disabled,PartitionScheme=default" \
-  --output-dir build_ecwhud EcwHud
+```powershell
+$index = 'https://espressif.github.io/arduino-esp32/package_esp32_index.json'
+arduino-cli core update-index --additional-urls $index
+arduino-cli core install esp32:esp32@3.3.12 --additional-urls $index
+
+$sketch = '.\work\firmware\EcwHud'
+$output = '.\work\firmware\build_ecwhud'
+New-Item -ItemType Directory -Force $sketch | Out-Null
+Copy-Item .\firmware\ecw-hud\* $sketch -Force
+$board = 'esp32:esp32:esp32s3:FlashMode=dio,FlashSize=16M,CDCOnBoot=default,PSRAM=disabled,PartitionScheme=default'
+arduino-cli compile --fqbn $board --output-dir $output $sketch
 ```
 
-`firmware/tools/flash.sh` 负责按分区烧录（不动 VFS 区），用法：
+Arduino CLI 要求主 `.ino` 与草图目录同名，因此在 Git 忽略的 `work/` 下使用 `EcwHud` 目录。`firmware/tools/flash.sh` 使用以脚本目录为基准的构建产物和 `boot_app0.bin` 路径。使用前按脚本核对文件位置。
+
+从仓库根目录运行串口工具：
+
+```powershell
+python -X utf8 .\firmware\tools\serial_cli.py COM4 --baud 115200 --script 'HELP|3;BUSC|14'
+```
+
+`HELP` 返回当前固件的命令。`BUSC` 扫描 `GPIO41`／`GPIO42` 上的 I²C 设备，输出实际发现的地址。
+
+2026 年 11 月 15 日实机记录：Windows 将 `1A86:55D3` 枚举为 `COM4`。`HELP` 返回 `EcwHud / 桥 + 状态屏`，`BUSC` 找到一个设备 `0x3C`。发送 `HUD TEXT LINK OK` 后串口返回 `已显示: LINK OK`，发送 `HUD ON` 后返回 `屏已开`。这次记录覆盖主机命令和固件回执。OLED 画面、语音或振动、连续采样和 30 分钟联动需在现场另外验收。
+
+按分区烧录时使用以下命令：
 
 ```bash
 bash flash.sh EcwHud COM4      # 桥 + 状态屏
