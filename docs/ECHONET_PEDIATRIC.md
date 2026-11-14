@@ -32,6 +32,24 @@ $python = '.\.venv\Scripts\python.exe'
 
 每轮结束后，程序保存 `last.pt`，其中包含最近一轮的模型、优化器、AMP scaler 和抽样状态。训练中断后，使用原命令和相同的 `--run-dir`、原始归档、抽样参数，再加 `--resume` 从最近完成的一轮继续。`best.pt` 始终按验证集 Macro-F1 选出，用于冻结和独立测试。
 
+## 左室内膜轮廓分割
+
+`train_stanford_lv.py` 使用 A4C 和 PSAX 发布视频中有有效左室描迹的帧，训练单帧 U-Net。按发布方加载器的规则，整数 `Frame` 直接作为从 0 开始的解码帧索引，按 CSV 原始顶点顺序在 112 × 112 图像上填充多边形。缺少描迹的标记和超出可解码范围的帧单独计数。 [发布方的数据加载器](https://github.com/echonet/rv-internal/blob/74e45522fc616a2591116b30cd3521ca0cfa2133/echonet/datasets/echo.py#L279-L339)
+
+```powershell
+& $python -m pip install scikit-image==0.26.0
+$lvRun = '.\runs\stanford-lv-v1'
+& $python -X utf8 .\train_stanford_lv.py train --archive $archive --run-dir $lvRun
+& $python -X utf8 .\train_stanford_lv.py test --archive $archive `
+  --checkpoint (Join-Path $lvRun 'best.pt') --report (Join-Path $lvRun 'test.json')
+& $python -X utf8 .\train_stanford_lv.py predict --checkpoint (Join-Path $lvRun 'best.pt') `
+  --video $video --frame $frameIndex --mask '.\work\left-ventricle-mask.png'
+```
+
+第 0 次轮转使用原始折 `2–9` 训练、`1` 验证、`0` 独立测试。使用验证集患儿平均 Dice 选择最佳 checkpoint，独立测试固定二值概率阈值 0.5。报告包含逐帧平均及患儿平均 Dice、IoU，并按切面列出结果和描迹覆盖。预测入口对 112 × 112 源视频的指定帧输出二值 PNG mask，轮廓对应左室内膜所包围的区域。
+
+完整心脏结构轮廓需要其他结构的空间标注。影像质量和异常征象各需医生确认的标签与适用范围，射血分数和描迹缺失保持其原有含义。
+
 ## 儿童心超专家需要确认
 
 准备首批人工复核时，使用 [20 段人工复核流程](DOCTOR_REVIEW.md)。
