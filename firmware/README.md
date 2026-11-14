@@ -132,7 +132,9 @@ OLEDRST                     重新初始化屏
 - 任务 5「双舵机与电源」——**缺件**：没有舵机、控制板、5V 电源。只把接口、
   电流预算、电池充电器待确认项写死；固件侧只有角度→脉宽换算，不构成验收。
   详见 [docs/firmware/servo.md](../docs/firmware/servo.md)
-- 任务 6「电脑联动」——进行中
+- 任务 6「电脑联动」——**实机跑完 30 分钟**：90/90 提示到达、0 重启、0 丢样；
+  新增 `tools/terminal_link_test.py` 做计时与统计。
+  详见 [docs/firmware/link-test.md](../docs/firmware/link-test.md)
 
 踩过的坑集中在 [docs/firmware/pitfalls.md](../docs/firmware/pitfalls.md)，
 硬件关键事实见 [docs/firmware/hardware-facts.md](../docs/firmware/hardware-facts.md)。
