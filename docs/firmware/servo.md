@@ -15,11 +15,17 @@
 
 | 项 | 内容 | 来源 |
 |---|---|---|
-| 连接器 | CN2：`1=PWM1` / `2=PWM2` / `3=GND` | module.json `pin_numbers` |
+| 板端丝印 | **`CN7_SERVO`**（ECW6700 主控板上的那个三针口） | `platforms/ecw6700/PORT-MAP.md` |
+| 模块侧接点 | CN2：`1=PWM1` / `2=PWM2` / `3=GND`（图纸接点编号，非板端丝印） | module.json `pin_numbers` |
+| ECW 侧引脚 | `PWM1 → IO15`、`PWM2 → IO16`；走 **CCU6**（`ECW6700_PWM_CCU6=0x100`），channel0/PWM4→pins[0]、channel1/PWM6→pins[1]，**共用周期** | `bsp_ecw6700.h`、`pins.inc` |
+| ESP32 侧引脚 | 本固件临时用 `GPIO7`(CH1) / `GPIO15`(CH2)，与 ECW 无关 | `EdgeTerminal.ino` |
 | 逻辑电平 | 3.3V PWM，50 Hz 帧 | 本固件 `ledcAttach(pin, 50, 16)` |
-| 舵机电源 | **独立 5V 供电端**，与控制板共地 | notes 原文 |
+| 舵机电源 | **独立 5V 供电端**，与控制板共地；**CN7 上没有 5V** | notes 原文 |
 | 转接电路 | 「无源信号直连与电源并联分配，**未配置有源控制和稳压电路**」 | programming_facts |
 | 状态 | `connection_status: schematic-derived; physical orientation unverified` | module.json |
+
+> 两套编号别混：**板端看 `CN7`，模块图纸看 `CN2`**，说的是同一个三针口。
+> 另注：`IO16` 同时被列为 `PIT0_CH0_SHARED_PWM_IO16`，走 CCU6 时不可再让 PIT 占用同一脚。
 
 两条必须记住：
 
@@ -109,13 +115,14 @@ PWM 在**第一次收到命令时**才 `ledcAttach`，不在开机时占用引�
 开机就配 PWM 只会让 `PROBE` 类诊断看到莫名其妙的电平。
 
 角度换算：`pulse = 500 + deg/180 × 2000`（µs），帧长 20ms，16 位占空比。
-`GPIO7` / `GPIO15` 分别对应 CH1 / CH2，都避开了 UART0（43/44）、Flash（26~37）、USB（19/20）。
+`GPIO7` / `GPIO15` 是**ESP32 侧**的 CH1 / CH2，都避开了 UART0（43/44）、Flash（26~37）、USB（19/20）——
+和 ECW 主控板 `CN7` 的 `IO15/IO16` 是两套完全不同的引脚，别对着板子找 ESP32 的脚。
 
 ## 八、验收状态（对应 issue #5 四条）
 
 | # | 验收项 | 状态 |
 |---|---|---|
-| 1 | 记录控制板接口/逻辑电平、两只舵机规格、电源规格 | 🟡 接口与逻辑电平已记录（CN2 / 3.3V PWM）；**舵机版本、脉宽、机械限位 blocked**；电源规格仅有建议值 |
+| 1 | 记录控制板接口/逻辑电平、两只舵机规格、电源规格 | 🟡 接口与逻辑电平已记录（板端 CN7 / 模块侧 CN2 / 3.3V PWM / ECW IO15-IO16 走 CCU6）；**舵机版本、脉宽、机械限位 blocked**；电源规格仅有建议值 |
 | 2 | 两只舵机空载到达设定位置，记录方向与行程 | ⛔ 无舵机 |
 | 3 | 两只同时启动记录电压，核对在规格内且主控运行 | ⛔ 无舵机、无 5V 电源、无万用表读数 |
 | 4 | 核对充电器铭牌与电池串数，记录供电接法 | ⛔ 充电器模块 `blocked`，串数/电压/极性未确认 |
