@@ -39,3 +39,4 @@ DICOMDIR
 
 # 固件导出的采样样本要入库（默认规则忽略 *.log）
 !/docs/firmware/samples/*.log
+!/docs/firmware/samples/*.json
