@@ -36,6 +36,12 @@
 #include "oled_ssd1306.h"
 #include "env_sensors.h"
 
+// 上电默认启用的 mock 位。
+// 本批实物只有屏和 TTS，环境三项没有器件，所以默认开环境三项，让链路有数据可跑。
+// 器件一旦真的上线，mock 自动让位（见 EnvHub::poll 里的 everSeen 判定）；
+// 想验证"传感器掉线该项显示不可用"，发 MOCK OFF 即可。
+#define DEFAULT_MOCK MOCK_ENV
+
 // ------------------------------------------------------------------ 引脚
 static const int PIN_OLED_SDA = 41;
 static const int PIN_OLED_SCL = 42;
@@ -49,6 +55,7 @@ static const int PIN_IR_DO    = 1;
 // ------------------------------------------------------------------ 全局
 static Oled oled;
 static EnvHub env;
+static Mock mockSrc;                     // 无实物器件时的数据源替身
 static bool oledOk = false;
 
 static char hintLine[24] = "READY";      // 屏底部显示的最近提示
@@ -170,6 +177,12 @@ static void drawBadge(int x, int y, bool ok) {
   }
 }
 
+// mock 值不能和真实值长得一样，否则截图流出去分不清真假。打一个 M 角标。
+static void drawFlag(int x, int y, bool ok, bool isMock) {
+  if (isMock) { oled.text(x, y, "M", 1); return; }
+  drawBadge(x, y, ok);
+}
+
 static void drawEnvPage() {
   if (!oledOk) return;
 
@@ -183,22 +196,25 @@ static void drawEnvPage() {
   oled.hline(0, 9, OLED_W);
 
   // 温度
+  bool mT = (env.state.mockMask & MOCK_TEMP) != 0;
   if (env.state.tempValid) snprintf(line, sizeof(line), "TEMP %5.1f C", env.state.tempC);
   else                     snprintf(line, sizeof(line), "TEMP   --   ");
   oled.text(0, 13, line, 1);
-  drawBadge(116, 13, env.state.tempValid);
+  drawFlag(116, 13, env.state.tempValid, mT);
 
   // 湿度
+  bool mH = (env.state.mockMask & MOCK_RH) != 0;
   if (env.state.rhValid) snprintf(line, sizeof(line), "RH   %5.1f %%", env.state.rhPct);
   else                   snprintf(line, sizeof(line), "RH     --   ");
   oled.text(0, 23, line, 1);
-  drawBadge(116, 23, env.state.rhValid);
+  drawFlag(116, 23, env.state.rhValid, mH);
 
   // 气压
+  bool mP = (env.state.mockMask & MOCK_PRES) != 0;
   if (env.state.pressValid) snprintf(line, sizeof(line), "PRES %6.1f hPa", env.state.pressHpa);
   else                      snprintf(line, sizeof(line), "PRES    --     ");
   oled.text(0, 33, line, 1);
-  drawBadge(116, 33, env.state.pressValid);
+  drawFlag(116, 33, env.state.pressValid, mP);
 
   oled.hline(0, 42, OLED_W);
 
@@ -241,27 +257,39 @@ static void fireHint(int idx, const char *text) {
 
 // ------------------------------------------------------------------ 环境读数输出
 static void printEnvHuman() {
-  char t[16], h[16], p[16];
+  char t[16], h[16], p[16], mk[24];
   snprintf(t, sizeof(t), env.state.tempValid  ? "%.2f" : "--", env.state.tempValid  ? env.state.tempC  : 0.0f);
   snprintf(h, sizeof(h), env.state.rhValid    ? "%.2f" : "--", env.state.rhValid    ? env.state.rhPct  : 0.0f);
   snprintf(p, sizeof(p), env.state.pressValid ? "%.2f" : "--", env.state.pressValid ? env.state.pressHpa : 0.0f);
-  say("[ENV] #%lu t=%s C  rh=%s %%  p=%s hPa  %s%s%s\r\n",
-      (unsigned long)env.state.seq, t, h, p,
+  mk[0] = 0;
+  if (env.state.mockMask) {
+    char names[20] = "";
+    if (env.state.mockMask & MOCK_TEMP) strcat(names, "T ");
+    if (env.state.mockMask & MOCK_RH)   strcat(names, "RH ");
+    if (env.state.mockMask & MOCK_PRES) strcat(names, "P ");
+    snprintf(mk, sizeof(mk), "[MOCK:%s] ", names);
+  }
+  say("[ENV] #%lu t=%s C  rh=%s %%  p=%s hPa  %s%s%s%s\r\n",
+      (unsigned long)env.state.seq, t, h, p, mk,
       env.state.tempValid ? "" : "[TEMP 离线] ",
       env.state.rhValid ? "" : "[RH 离线] ",
       env.state.pressValid ? "" : "[PRES 离线]");
 }
 
 // 机器可读, 固定字段顺序, 电脑侧直接 split
+//   ENV,<t>,<rh>,<p>,<tv>,<rv>,<pv>,<stamp_ms>,<mock_mask>
+// 第 9 列是 mock 位图（1=TEMP 2=RH 4=PRES），0 表示三项都来自实物。
+// 老解析器读前 8 列不受影响。
 static void printEnvCsv() {
-  say("ENV,%.2f,%.2f,%.2f,%d,%d,%d,%lu\r\n",
+  say("ENV,%.2f,%.2f,%.2f,%d,%d,%d,%lu,%u\r\n",
       env.state.tempValid ? env.state.tempC : 0.0f,
       env.state.rhValid ? env.state.rhPct : 0.0f,
       env.state.pressValid ? env.state.pressHpa : 0.0f,
       env.state.tempValid ? 1 : 0,
       env.state.rhValid ? 1 : 0,
       env.state.pressValid ? 1 : 0,
-      (unsigned long)env.state.stampMs);
+      (unsigned long)env.state.stampMs,
+      (unsigned)env.state.mockMask);
 }
 
 // ------------------------------------------------------------------ I2C 扫描
@@ -284,6 +312,63 @@ static void i2cScan() {
   else    say("  共 %d 个器件\r\n", n);
 }
 
+// ------------------------------------------------------------------ MOCK 控制
+static void mockStatus() {
+  char b[40];
+  mockSrc.describe(b, sizeof(b));
+  say("\r\n[MOCK] 启用位: %s\r\n", b);
+  say("  温度  : %s\r\n",
+      (!env.thEverSeen && mockSrc.on(MOCK_TEMP)) ? "MOCK 接管"
+      : (env.thEverSeen ? "实物曾经在线 -> 不接管" : "无数据"));
+  say("  湿度  : %s\r\n",
+      (!env.thEverSeen && mockSrc.on(MOCK_RH)) ? "MOCK 接管"
+      : (env.thEverSeen ? "实物曾经在线 -> 不接管" : "无数据"));
+  say("  气压  : %s\r\n",
+      (!env.baroEverSeen && mockSrc.on(MOCK_PRES)) ? "MOCK 接管"
+      : (env.baroEverSeen ? "实物曾经在线 -> 不接管" : "无数据"));
+  say("  基线  : T=%.2f C  RH=%.2f %%  P=%.2f hPa\r\n",
+      mockSrc.tempBase, mockSrc.rhBase, mockSrc.presBase);
+  say("  规则  : 实物上线即让位; 曾上线后掉线则如实显示离线, 不用 mock 兜底\r\n");
+  say("  标记  : 屏上打 M 角标, 串口行标 [MOCK:..], CSV 第 9 列置位\r\n");
+}
+
+static void mockCmd(char *a) {
+  while (a && *a == ' ') a++;
+  if (!a || !*a) { mockStatus(); return; }
+
+  char verb[16];
+  char *sp = strchr(a, ' ');
+  size_t vl = sp ? (size_t)(sp - a) : strlen(a);
+  if (vl >= sizeof(verb)) vl = sizeof(verb) - 1;
+  memcpy(verb, a, vl);
+  verb[vl] = 0;
+  char *rest = sp ? sp + 1 : NULL;
+  while (rest && *rest == ' ') rest++;
+
+  if (!strcasecmp(verb, "BASE")) {
+    float t = 0, h = 0, p = 0;
+    int got = rest ? sscanf(rest, "%f %f %f", &t, &h, &p) : 0;
+    if (got >= 1 && t != 0) mockSrc.tempBase = t;
+    if (got >= 2 && h != 0) mockSrc.rhBase = h;
+    if (got >= 3 && p != 0) mockSrc.presBase = p;
+    say("[MOCK] 基线 -> T=%.2f RH=%.2f P=%.2f\r\n",
+        mockSrc.tempBase, mockSrc.rhBase, mockSrc.presBase);
+    mockStatus();
+    return;
+  }
+
+  if (!strcasecmp(verb, "ON"))  { mockSrc.enable(MOCK_ALL); say("[MOCK] 全部打开\r\n");  mockStatus(); return; }
+  if (!strcasecmp(verb, "OFF")) { mockSrc.clear();          say("[MOCK] 全部关闭\r\n");  mockStatus(); return; }
+
+  bool en = true;
+  if (rest && !strcasecmp(rest, "OFF")) en = false;
+  uint8_t bit = mockSrc.byName(verb, en);
+  if (!bit) { say("不认识: MOCK %s (TEMP/RH/PRES/ENV/ALL ON|OFF, BASE t rh p)\r\n", verb); return; }
+
+  say("[MOCK] %s %s\r\n", verb, en ? "打开" : "关闭");
+  mockStatus();
+}
+
 // ------------------------------------------------------------------ 命令
 static void help() {
   say("\r\n==== EdgeTerminal ====\r\n");
@@ -292,6 +377,10 @@ static void help() {
   say("  SCAN              I2C 总线扫描\r\n");
   say("  REGS              BMP388 寄存器快照 (判定厂商序列对不对)\r\n");
   say("  STAT              状态汇总\r\n");
+  say("  MOCK              查看 mock 状态\r\n");
+  say("  MOCK ON|OFF       环境三项 mock 全开/全关\r\n");
+  say("  MOCK TEMP ON|OFF  单源开关 (TEMP/RH/PRES/ENV/ALL)\r\n");
+  say("  MOCK BASE t rh p  改 mock 基线, 例如 MOCK BASE 36.5 45 1010\r\n");
   say("  HINT <n>          触发第 n 条提示 (1..8): 屏+播报+振动+回执\r\n");
   say("  HINT <text>       只上屏不播报 (英文)\r\n");
   say("  TTS <n>           只播报第 n 条\r\n");
@@ -309,17 +398,21 @@ static void help() {
 }
 
 static void stat() {
+  char b[40];
   say("\r\n---- STAT ----\r\n");
   say("屏        : %s (0x%02X)\r\n", oledOk ? "在线" : "离线", oled.addr);
-  say("温湿度    : %s  采样 %lu 次 / 失败 %lu 次 (err=%u)\r\n",
+  say("温湿度    : %s  采样 %lu 次 / 失败 %lu 次 (err=%u)%s\r\n",
       env.th.present ? "在线" : "离线",
-      (unsigned long)env.th.okCount, (unsigned long)env.th.errCount, env.th.lastErr);
-  say("气压      : %s  chipId=0x%02X  采样 %lu / 失败 %lu (err=%u)\r\n",
+      (unsigned long)env.th.okCount, (unsigned long)env.th.errCount, env.th.lastErr,
+      (!env.th.present && !env.thEverSeen && mockSrc.on(MOCK_TEMP)) ? "  <- mock 接管" : "");
+  say("气压      : %s  chipId=0x%02X  采样 %lu / 失败 %lu (err=%u)%s\r\n",
       env.baro.present ? "在线" : "离线", env.baro.chipId,
-      (unsigned long)env.baro.okCount, (unsigned long)env.baro.errCount, env.baro.lastErr);
+      (unsigned long)env.baro.okCount, (unsigned long)env.baro.errCount, env.baro.lastErr,
+      (!env.baro.present && !env.baroEverSeen && mockSrc.on(MOCK_PRES)) ? "  <- mock 接管" : "");
   say("温度值    : %s\r\n", env.state.tempValid ? "有效" : "无效");
   say("湿度值    : %s\r\n", env.state.rhValid ? "有效" : "无效");
   say("气压值    : %s\r\n", env.state.pressValid ? "有效" : "无效");
+  say("MOCK      : %s\r\n", mockSrc.describe(b, sizeof(b)));
   say("提示收/回 : %lu / %lu\r\n", (unsigned long)hintSeqIn, (unsigned long)hintAcked);
   say("红外 DO   : %d\r\n", irLast);
   say("运行      : %lu s\r\n", (unsigned long)(millis() / 1000));
@@ -350,6 +443,7 @@ static void handle(char *line) {
   if (!strcasecmp(line, "STAT"))  { stat(); return; }
   if (!strcasecmp(line, "PINS"))  { pins(); return; }
   if (!strcasecmp(line, "PHRASES")) { help(); return; }
+  if (!strcasecmp(line, "MOCK"))  { mockCmd(arg); env.poll(); drawEnvPage(); printEnvHuman(); return; }
   if (!strcasecmp(line, "REGS"))  { env.baro.dumpRegs(say); return; }
   if (!strcasecmp(line, "IR"))    { irLast = (uint8_t)digitalRead(PIN_IR_DO); say("IR DO = %d\r\n", irLast); return; }
 
@@ -417,11 +511,18 @@ void setup() {
     i2cScan();   // 屏都没有, 先把总线现状打出来
   }
 
+  env.mock = &mockSrc;
+  mockSrc.enable(DEFAULT_MOCK);
   env.begin();
   env.poll();
   say("[ENV] 温湿度=%s 气压=%s\r\n",
       env.th.present ? "在线" : "离线",
       env.baro.present ? "在线" : "离线");
+  if (mockSrc.mask) {
+    char b[40];
+    say("[MOCK] 以下数据源无实物, 由 mock 接管: %s\r\n", mockSrc.describe(b, sizeof(b)));
+    say("[MOCK] 屏上打 M 角标 / 串口标 [MOCK:..] / CSV 第 9 列置位; MOCK OFF 可关闭\r\n");
+  }
 
   setHintLine("READY");
   drawEnvPage();

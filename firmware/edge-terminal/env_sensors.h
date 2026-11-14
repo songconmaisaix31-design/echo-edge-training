@@ -20,6 +20,7 @@
 #include <Wire.h>
 #include <math.h>
 #include <string.h>
+#include "mock_sources.h"
 
 // ---------------------------------------------------------------- CRC-8
 // GXHT30C: poly 0x31, init 0xFF, 不反射, 结果不异或
@@ -228,6 +229,7 @@ struct EnvState {
   float pressHpa = 0.0f;
   uint32_t stampMs = 0;
   uint32_t seq = 0;
+  uint8_t mockMask = 0;      // 本帧中哪些量来自 mock（MOCK_TEMP/RH/PRES）
 };
 
 class EnvHub {
@@ -235,57 +237,87 @@ class EnvHub {
   Gxht30c th;
   Bmp388Tokmas baro;
   EnvState state;
+  Mock *mock = nullptr;        // 非空且对应位打开时，器件不在位则接管
 
   // 上次成功/失败的时间, 用于"掉线每 2 秒重试"
   uint32_t thNextTry = 0;
   uint32_t baroNextTry = 0;
 
+  // 上电以来是否见过实物。mock 只在这个为 false 时接管 ——
+  // 实物曾经正常工作过又掉线，必须如实显示离线，不能被 mock 掩盖。
+  bool thEverSeen = false;
+  bool baroEverSeen = false;
+
   static const uint32_t RETRY_MS = 2000;
 
   void begin() {
     th.probe();
-    if (th.present) th.present = th.present;   // 探测到就等第一次 read
+    if (th.present) thEverSeen = true;
     baro.probe();
-    if (baro.present) baro.begin();
+    if (baro.present) { baroEverSeen = true; baro.begin(); }
   }
 
   // 采一轮。单项失败只清该项, 其他照常刷新。
+  // 有效性标志每帧先清零再置位，保证"这一帧有没有数"和"上一次有没有数"不混。
+  // （踩过: 关掉 mock 后气压仍显示上一帧的值，因为只置位从不清零。）
   void poll() {
     uint32_t now = millis();
+    state.mockMask = 0;
+    state.tempValid = false;
+    state.rhValid = false;
+    state.pressValid = false;
 
     // ---- 温湿度 ----
     if (th.present) {
       float t, h;
       if (th.read(t, h)) {
+        thEverSeen = true;
         state.tempC = t;
         state.rhPct = h;
         state.tempValid = true;
         state.rhValid = true;
       } else {
-        state.tempValid = false;
-        state.rhValid = false;
         thNextTry = now + RETRY_MS;
       }
     } else if (now >= thNextTry) {
       thNextTry = now + RETRY_MS;
-      th.probe();
+      if (th.probe()) thEverSeen = true;   // 总线上有 ACK 就算见过
+    }
+
+    // 器件从未出现在总线上 -> mock 接管（曾出现过则不接管）
+    if (!th.present && !thEverSeen && mock) {
+      if (mock->on(MOCK_TEMP)) {
+        state.tempC = mock->tempC();
+        state.tempValid = true;
+        state.mockMask |= MOCK_TEMP;
+      }
+      if (mock->on(MOCK_RH)) {
+        state.rhPct = mock->rhPct();
+        state.rhValid = true;
+        state.mockMask |= MOCK_RH;
+      }
     }
 
     // ---- 气压 ----
     if (baro.present) {
       float p, it;
       if (baro.read(p, it)) {
+        baroEverSeen = true;
         state.pressHpa = p;
         state.pressValid = true;
       } else {
-        state.pressValid = false;
         baro.calibrated = false;      // 下次重新 init
         baroNextTry = now + RETRY_MS;
       }
     } else if (now >= baroNextTry) {
       baroNextTry = now + RETRY_MS;
-      baro.probe();
-      if (baro.present) baro.begin();
+      if (baro.probe()) { baroEverSeen = true; baro.begin(); }
+    }
+
+    if (!baro.present && !baroEverSeen && mock && mock->on(MOCK_PRES)) {
+      state.pressHpa = mock->pressHpa();
+      state.pressValid = true;
+      state.mockMask |= MOCK_PRES;
     }
 
     state.stampMs = now;
