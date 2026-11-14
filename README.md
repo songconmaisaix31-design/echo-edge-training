@@ -6,7 +6,7 @@ RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质�
 
 - [#7 回收团队标注并通过数据预检](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)
 - [#8 建立独立测试入口和评价报告](https://github.com/songconmaisaix31-design/echo-edge-training/issues/8) · [评估命令和报告口径](docs/EVALUATION.md)
-- [#9 训练 EchoNet-Pediatric A4C／PSAX 基线](https://github.com/songconmaisaix31-design/echo-edge-training/issues/9)，待 Stanford 确认训练和权重用途。
+- [#9 训练 EchoNet-Pediatric A4C／PSAX 基线](https://github.com/songconmaisaix31-design/echo-edge-training/issues/9) · [第 10 轮 FP16 研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10)
 - [#10 在 RTX 5060 微调团队切面与采集质量双头](https://github.com/songconmaisaix31-design/echo-edge-training/issues/10)，使用团队标注和独立测试入口。
 - [#11 导出 ONNX 并验证 RTX 5060 推理](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11)
 - [#12 将电脑推理结果接入 ESP32-S3 提示](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)
@@ -44,6 +44,48 @@ nvidia-smi
 ```
 
 最后一行应输出 `1240`。只做 CPU 数据预检的环境，可以把 PyTorch 安装命令换成 `torch==2.12.1+cpu torchvision==0.27.1+cpu --index-url https://download.pytorch.org/whl/cpu`。其他依赖仍从 `requirements.txt` 安装。
+
+## 下载并运行 Release 的 FP16 模型
+
+[Stanford EchoNet-Pediatric 第 10 轮研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10) 供有私有仓库访问权限的成员用于非商业研究。已验证的组合为 Windows x64、NVIDIA GeForce RTX 5060 Laptop GPU、CUDA 13 PyTorch 和 TensorRT 10.16.1.11。推理入口会核对 GPU 型号、TensorRT 版本和引擎 SHA-256。
+
+安装 GitHub CLI，用有仓库权限的账号完成 `gh auth login --hostname github.com`。首次获取代码时，在 PowerShell 执行以下命令。
+
+```powershell
+gh repo clone songconmaisaix31-design/echo-edge-training -- --branch main --single-branch
+Set-Location .\echo-edge-training
+```
+
+已有本地副本时，在仓库根目录更新 `main` 即可。
+
+按[环境要求](#环境要求)配置 CUDA 版 PyTorch 和基础依赖，再在仓库根目录安装推理依赖。
+
+```powershell
+$python = '.\.venv\Scripts\python.exe'
+& $python -m pip install 'tensorrt-cu13==10.16.1.11' 'onnx==1.22.0' 'onnxruntime-gpu==1.27.0' --index-url https://pypi.org/simple
+```
+
+下载以下两个附件到同一目录。也可以用有仓库权限的账号登录 GitHub 后，从 Release 页面直接下载这两个文件。
+
+```powershell
+$releaseDir = '.\work\stanford-fp16-epoch10'
+gh release download stanford-fp16-epoch10 `
+  --repo songconmaisaix31-design/echo-edge-training `
+  --dir $releaseDir `
+  --pattern 'Stanford-A4C-PSAX-TensorRT-FP16.engine' `
+  --pattern 'Stanford-TensorRT-FP32-FP16-test.json'
+if ($LASTEXITCODE -ne 0) { throw 'Release 附件下载失败' }
+```
+
+将 `$video` 改为获授权的本地灰阶心超 AVI、MP4 或 MOV 路径。程序从引擎报告读取锁定参数，运行只需上述两个 Release 附件。
+
+```powershell
+$engineReport = Join-Path $releaseDir 'Stanford-TensorRT-FP32-FP16-test.json'
+$video = '.\data\sample.avi'
+& $python -X utf8 .\infer_stanford.py predict --engine-report $engineReport --video $video --precision fp16
+```
+
+成功时输出一条 JSON，`precision` 为 `fp16`，`view` 为 `A4C` 或 `PSAX`，另有 `sampled_frames` 和两类平均概率 `probabilities`。
 
 ## 数据交付
 
@@ -107,4 +149,4 @@ New-Item -ItemType Directory -Force .\work | Out-Null
 
 已在 RTX 5060 上验证 CUDA 运算、真实视频解码与抽帧、常规 DICOM cine 的灰阶与彩色读取、双头前向和预检拦截。团队设备的二维彩色多普勒、变帧间隔样本、正式标注和训练结果仍需在实际数据上验证。该仓库提供研究训练与工程验证代码，尚无临床准确率和目标终端部署结果。
 
-GitHub 仅存放代码、依赖版本、空白模板和说明文档。原始影像、填好的标注、患者关联表、私有报告、抽帧缓存和模型权重应留在授权环境。`data/`、`work/` 和 `runs/` 已加入 Git 忽略规则。上传其他文件前检查 `git status`，尤其留意无扩展名的 DICOM 文件。
+Git 版本库跟踪代码、依赖版本、空白模板和说明文档。获准共享的 Stanford 权重、推理引擎和汇总测试报告通过本私有仓库的 Release 提供。原始影像、填好的标注、患者关联表、其他私有报告和抽帧缓存应留在授权环境。`data/`、`work/` 和 `runs/` 已加入 Git 忽略规则。上传其他文件前检查 `git status`，尤其留意无扩展名的 DICOM 文件。
