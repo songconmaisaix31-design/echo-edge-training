@@ -35,12 +35,13 @@
 #include <strings.h>
 #include "oled_ssd1306.h"
 #include "env_sensors.h"
+#include "ppg.h"
 
 // 上电默认启用的 mock 位。
-// 本批实物只有屏和 TTS，环境三项没有器件，所以默认开环境三项，让链路有数据可跑。
+// 本批实物只有屏和 TTS，环境三项与 PPG 都没有器件，所以默认开这四项，让链路有数据可跑。
 // 器件一旦真的上线，mock 自动让位（见 EnvHub::poll 里的 everSeen 判定）；
-// 想验证"传感器掉线该项显示不可用"，发 MOCK OFF 即可。
-#define DEFAULT_MOCK MOCK_ENV
+// 想验证"传感器掉线该项显示不可用"，发 MOCK OFF / PPG OFF 即可。
+#define DEFAULT_MOCK (MOCK_ENV | MOCK_PPG)
 
 // ------------------------------------------------------------------ 引脚
 static const int PIN_OLED_SDA = 41;
@@ -56,6 +57,8 @@ static const int PIN_IR_DO    = 1;
 static Oled oled;
 static EnvHub env;
 static Mock mockSrc;                     // 无实物器件时的数据源替身
+static PpgSource ppgSrc;                 // PPG 波形源（当前是 mock）
+static PpgProcessor ppgProc;             // 峰值检测/脉率估计（真代码）
 static bool oledOk = false;
 
 static char hintLine[24] = "READY";      // 屏底部显示的最近提示
@@ -64,6 +67,12 @@ static uint32_t hintAcked = 0;           // 已回执的提示数
 static bool autoStream = true;           // 周期输出开关
 static uint32_t lastPoll = 0, lastStream = 0, lastDraw = 0;
 static uint8_t irLast = 0;
+
+// PPG 采样调度与日志导出
+static uint32_t lastPpgMs = 0;
+static uint32_t ppgLogUntil = 0;
+static uint32_t ppgLogCount = 0;
+static uint32_t beatFlashUntil = 0;
 
 // ------------------------------------------------------------------ 输出
 static void say(const char *fmt, ...) {
@@ -183,6 +192,24 @@ static void drawFlag(int x, int y, bool ok, bool isMock) {
   drawBadge(x, y, ok);
 }
 
+// 7x6 的小心形，搏动时实心、静息时空心 —— issue #3 要求的"节拍图标"
+static void drawHeart(int x, int y, bool filled) {
+  if (filled) {
+    oled.hline(x + 1, y,     2); oled.hline(x + 4, y,     2);
+    oled.hline(x,     y + 1, 7); oled.hline(x,     y + 2, 7);
+    oled.hline(x + 1, y + 3, 5); oled.hline(x + 2, y + 4, 3);
+    oled.px(x + 3, y + 5);
+  } else {
+    oled.px(x + 1, y);     oled.px(x + 2, y);
+    oled.px(x + 4, y);     oled.px(x + 5, y);
+    oled.px(x, y + 1);     oled.px(x + 6, y + 1);
+    oled.px(x, y + 2);     oled.px(x + 6, y + 2);
+    oled.px(x + 1, y + 3); oled.px(x + 5, y + 3);
+    oled.px(x + 2, y + 4); oled.px(x + 4, y + 4);
+    oled.px(x + 3, y + 5);
+  }
+}
+
 static void drawEnvPage() {
   if (!oledOk) return;
 
@@ -216,16 +243,25 @@ static void drawEnvPage() {
   oled.text(0, 33, line, 1);
   drawFlag(116, 33, env.state.pressValid, mP);
 
-  oled.hline(0, 42, OLED_W);
+  // 脉率 + 信号质量 + 节拍图标
+  bool mHr = mockSrc.on(MOCK_PPG);
+  if (!ppgSrc.enabled)      snprintf(line, sizeof(line), "HR  off");
+  else if (!ppgProc.valid)  snprintf(line, sizeof(line), "HR  ---bpm q%02d", ppgProc.quality);
+  else                      snprintf(line, sizeof(line), "HR  %3.0fbpm q%02d", ppgProc.bpm, ppgProc.quality);
+  oled.text(0, 43, line, 1);
+
+  bool beat = (int32_t)(millis() - beatFlashUntil) < 0;
+  if (!ppgSrc.enabled) {
+    oled.hline(112, 46, 14);                       // 关闭时划一条横杠
+  } else {
+    drawHeart(114, 44, beat);
+    if (mHr) oled.text(124, 43, "M", 1);           // mock 波形同样打 M
+  }
+
+  oled.hline(0, 53, OLED_W);
 
   // 底部: 最近一条电脑提示
-  oled.text(0, 46, hintLine, 1);
-
-  // 串口在线指示 + 红外
-  if (irLast) oled.text(0, 56, "IR: NEAR", 1);
-  else        oled.text(0, 56, "IR: ---", 1);
-  snprintf(line, sizeof(line), "IN%lu", (unsigned long)hintSeqIn);
-  oled.text(OLED_W - (int)strlen(line) * 6, 56, line, 1);
+  oled.text(0, 56, hintLine, 1);
 
   oled.show();
 }
@@ -290,6 +326,104 @@ static void printEnvCsv() {
       env.state.pressValid ? 1 : 0,
       (unsigned long)env.state.stampMs,
       (unsigned)env.state.mockMask);
+}
+
+// ------------------------------------------------------------------ 脉率输出
+// 人读行
+static void printHrHuman() {
+  if (!ppgSrc.enabled) { say("[HR] 关闭 (PPG ON 打开)\r\n"); return; }
+  say("[HR] bpm=%.1f  q=%d/100  %s  峰峰=%.0f  搏动=%lu  真值=%.1f%s\r\n",
+      ppgProc.bpm, ppgProc.quality, ppgProc.valid ? "有效" : "无效",
+      ppgProc.ppAmp, (unsigned long)ppgProc.beatCount, ppgSrc.hrTrue,
+      mockSrc.on(MOCK_PPG) ? "  [MOCK 波形]" : "");
+}
+
+// 机器可读: HR,<bpm>,<quality>,<valid>,<mock>,<stamp_ms>
+static void printHrCsv() {
+  say("HR,%.1f,%d,%d,%d,%lu\r\n",
+      ppgProc.valid ? ppgProc.bpm : 0.0f,
+      ppgProc.quality,
+      ppgProc.valid ? 1 : 0,
+      (ppgSrc.enabled && mockSrc.on(MOCK_PPG)) ? 1 : 0,
+      (unsigned long)millis());
+}
+
+// ------------------------------------------------------------------ PPG 控制
+static void ppgStatus() {
+  char bs[16];
+  if (ppgProc.valid) snprintf(bs, sizeof(bs), "%.1f bpm", ppgProc.bpm);
+  else               snprintf(bs, sizeof(bs), "--- (未收敛)");
+  say("\r\n[PPG] 采样 %d Hz\r\n", PPG_FS);
+  say("  状态    : %s\r\n", !ppgSrc.enabled ? "关闭" : (mockSrc.on(MOCK_PPG) ? "开 (mock 波形)" : "开 (外接器件)"));
+  say("  场景    : %s   真值 %.1f bpm\r\n", ppgSceneName(ppgSrc.scene), ppgSrc.hrTrue);
+  say("  估计    : %s   质量 %d/100   峰峰 %.0f\r\n", bs, ppgProc.quality, ppgProc.ppAmp);
+  say("  有效性  : %s   累计搏动 %lu\r\n",
+      ppgProc.valid ? "有效" : "无效", (unsigned long)ppgProc.beatCount);
+  say("  器件    : ITR9909 只有 DO 比较输出, 无模拟通道, 采不到脉搏波\r\n");
+  say("            真实 PPG 需 MAX30102 类器件; 换器件时只替换 PpgSource\r\n");
+}
+
+static void ppgCmd(char *a) {
+  while (a && *a == ' ') a++;
+  if (!a || !*a) { ppgStatus(); return; }
+
+  char verb[16];
+  char *sp = strchr(a, ' ');
+  size_t vl = sp ? (size_t)(sp - a) : strlen(a);
+  if (vl >= sizeof(verb)) vl = sizeof(verb) - 1;
+  memcpy(verb, a, vl);
+  verb[vl] = 0;
+  char *rest = sp ? sp + 1 : NULL;
+  while (rest && *rest == ' ') rest++;
+
+  if (!strcasecmp(verb, "ON")) {
+    ppgSrc.enabled = true;
+    mockSrc.enable(MOCK_PPG);
+    ppgSrc.reset(millis());
+    ppgProc.reset();
+    lastPpgMs = millis();
+    beatFlashUntil = 0;
+    say("[PPG] 打开, 50 Hz\r\n");
+    drawEnvPage();
+    return;
+  }
+  if (!strcasecmp(verb, "OFF")) {
+    ppgSrc.enabled = false;
+    mockSrc.disable(MOCK_PPG);
+    say("[PPG] 关闭\r\n");
+    drawEnvPage();
+    return;
+  }
+  if (!strcasecmp(verb, "SCENE")) {
+    if (!rest) { say("用法: PPG SCENE GOOD|MOTION|POOR\r\n"); return; }
+    if      (!strcasecmp(rest, "GOOD"))   ppgSrc.scene = PPG_GOOD;
+    else if (!strcasecmp(rest, "MOTION")) ppgSrc.scene = PPG_MOTION;
+    else if (!strcasecmp(rest, "POOR"))   ppgSrc.scene = PPG_POOR;
+    else { say("不认识: %s\r\n", rest); return; }
+    ppgProc.reset();
+    lastPpgMs = millis();
+    say("[PPG] 场景 -> %s (RR 窗口 8 拍, 约 5~8 秒收敛)\r\n", ppgSceneName(ppgSrc.scene));
+    return;
+  }
+  if (!strcasecmp(verb, "HR")) {
+    if (!rest) { say("用法: PPG HR <bpm>\r\n"); return; }
+    float v = atof(rest);
+    if (v < 30 || v > 220) { say("bpm 超出 30~220\r\n"); return; }
+    ppgSrc.hrTrue = v;
+    ppgProc.reset();
+    say("[PPG] 真值心率 -> %.0f bpm\r\n", v);
+    return;
+  }
+  if (!strcasecmp(verb, "LOG")) {
+    int sec = rest ? atoi(rest) : 10;
+    if (sec < 1) sec = 1;
+    if (sec > 300) sec = 300;
+    ppgLogCount = 0;
+    ppgLogUntil = millis() + (uint32_t)sec * 1000;
+    say("[PPG] 开始导出 %d 秒原始采样, 每行 PPG,<ms>,<raw>\r\n", sec);
+    return;
+  }
+  say("不认识: PPG %s (ON/OFF/SCENE/HR/LOG)\r\n", verb);
 }
 
 // ------------------------------------------------------------------ I2C 扫描
@@ -381,6 +515,11 @@ static void help() {
   say("  MOCK ON|OFF       环境三项 mock 全开/全关\r\n");
   say("  MOCK TEMP ON|OFF  单源开关 (TEMP/RH/PRES/ENV/ALL)\r\n");
   say("  MOCK BASE t rh p  改 mock 基线, 例如 MOCK BASE 36.5 45 1010\r\n");
+  say("  PPG               脉率状态 (采样率/场景/估计值/质量)\r\n");
+  say("  PPG ON|OFF        波形源开关\r\n");
+  say("  PPG SCENE GOOD|MOTION|POOR   接触状态\r\n");
+  say("  PPG HR <bpm>      设定真值心率 (用于对照算法估计)\r\n");
+  say("  PPG LOG <秒>      导出原始采样, 每行 PPG,<ms>,<raw>\r\n");
   say("  HINT <n>          触发第 n 条提示 (1..8): 屏+播报+振动+回执\r\n");
   say("  HINT <text>       只上屏不播报 (英文)\r\n");
   say("  TTS <n>           只播报第 n 条\r\n");
@@ -413,6 +552,10 @@ static void stat() {
   say("湿度值    : %s\r\n", env.state.rhValid ? "有效" : "无效");
   say("气压值    : %s\r\n", env.state.pressValid ? "有效" : "无效");
   say("MOCK      : %s\r\n", mockSrc.describe(b, sizeof(b)));
+  say("PPG       : %s  场景=%s  估计=%.1f bpm  q=%d  %s\r\n",
+      !ppgSrc.enabled ? "关闭" : (mockSrc.on(MOCK_PPG) ? "开(mock)" : "开"),
+      ppgSceneName(ppgSrc.scene), ppgProc.bpm, ppgProc.quality,
+      ppgProc.valid ? "有效" : "无效");
   say("提示收/回 : %lu / %lu\r\n", (unsigned long)hintSeqIn, (unsigned long)hintAcked);
   say("红外 DO   : %d\r\n", irLast);
   say("运行      : %lu s\r\n", (unsigned long)(millis() / 1000));
@@ -438,12 +581,13 @@ static void handle(char *line) {
   if (arg) { *arg = 0; arg++; while (*arg == ' ') arg++; }
 
   if (!strcasecmp(line, "HELP") || !strcasecmp(line, "?")) { help(); return; }
-  if (!strcasecmp(line, "READ"))  { env.poll(); printEnvHuman(); printEnvCsv(); drawEnvPage(); return; }
+  if (!strcasecmp(line, "READ"))  { env.poll(); printEnvHuman(); printEnvCsv(); printHrHuman(); printHrCsv(); drawEnvPage(); return; }
   if (!strcasecmp(line, "SCAN"))  { i2cScan(); return; }
   if (!strcasecmp(line, "STAT"))  { stat(); return; }
   if (!strcasecmp(line, "PINS"))  { pins(); return; }
   if (!strcasecmp(line, "PHRASES")) { help(); return; }
   if (!strcasecmp(line, "MOCK"))  { mockCmd(arg); env.poll(); drawEnvPage(); printEnvHuman(); return; }
+  if (!strcasecmp(line, "PPG"))   { ppgCmd(arg); return; }
   if (!strcasecmp(line, "REGS"))  { env.baro.dumpRegs(say); return; }
   if (!strcasecmp(line, "IR"))    { irLast = (uint8_t)digitalRead(PIN_IR_DO); say("IR DO = %d\r\n", irLast); return; }
 
@@ -524,6 +668,16 @@ void setup() {
     say("[MOCK] 屏上打 M 角标 / 串口标 [MOCK:..] / CSV 第 9 列置位; MOCK OFF 可关闭\r\n");
   }
 
+  // PPG: 本批没有模拟通道器件, 波形源默认是 mock
+  if (mockSrc.on(MOCK_PPG)) {
+    ppgSrc.enabled = true;
+    ppgSrc.reset(millis());
+    ppgProc.reset();
+    lastPpgMs = millis();
+    say("[PPG] 波形源=mock @%dHz  场景=%s  真值=%.0f bpm\r\n",
+        PPG_FS, ppgSceneName(ppgSrc.scene), ppgSrc.hrTrue);
+  }
+
   setHintLine("READY");
   drawEnvPage();
 
@@ -537,6 +691,37 @@ void loop() {
   static size_t n = 0;
 
   uint32_t now = millis();
+
+  // PPG 采样: 50 Hz。用固定步进累加而不是 lastPpgMs = now，否则每次调度误差都会累积。
+  if (ppgSrc.enabled) {
+    // 卡顿超过 500ms（例如振动用了阻塞延时）就把基准拉回现在，不要一次补上百个采样
+    if ((uint32_t)(now - lastPpgMs) > 500) lastPpgMs = now;
+
+    bool gotBeat = false;
+    while ((uint32_t)(now - lastPpgMs) >= PPG_PERIOD_MS) {
+      lastPpgMs += PPG_PERIOD_MS;
+      float raw = ppgSrc.sample(lastPpgMs);
+      ppgProc.push(raw, lastPpgMs);
+      if (ppgProc.takeBeat()) gotBeat = true;
+
+      if (ppgLogUntil) {
+        if ((int32_t)(millis() - ppgLogUntil) < 0) {
+          say("PPG,%lu,%.0f\r\n", (unsigned long)lastPpgMs, raw);
+          ppgLogCount++;
+        } else {
+          say("[PPG] 导出结束, 共 %lu 条 (约 %.1f 秒)\r\n",
+              (unsigned long)ppgLogCount, (float)ppgLogCount / PPG_FS);
+          ppgLogUntil = 0;
+        }
+      }
+    }
+
+    // 每次搏动闪一下心形
+    if (gotBeat) {
+      beatFlashUntil = millis() + 160;
+      drawEnvPage();
+    }
+  }
 
   // 采样: 1 Hz
   if (now - lastPoll >= 1000) {
@@ -555,6 +740,8 @@ void loop() {
       lastStream = now;
       printEnvHuman();
       printEnvCsv();
+      printHrHuman();
+      printHrCsv();
     }
   }
 
