@@ -68,22 +68,18 @@ public:
   uint8_t addr = 0x3C;
   bool online = false;
 
-  // 扫总线, 返回命中的 OLED 地址(优先 0x3C/0x3D), 没有返回 -1
+  // 只探测 SSD1306 地址，其他 I²C 设备由 BUSC 扫描。
   int scan(uint8_t sda, uint8_t scl, uint32_t hz = 400000) {
     Wire.end();
     delay(2);
     Wire.begin(sda, scl, hz);
     Wire.setClock(hz);
     delay(2);
-    int found = -1;
-    for (uint8_t a = 0x08; a <= 0x77; a++) {
+    for (uint8_t a = 0x3C; a <= 0x3D; a++) {
       Wire.beginTransmission(a);
-      if (Wire.endTransmission() == 0) {
-        if (a == 0x3C || a == 0x3D) return a;
-        if (found < 0) found = a;
-      }
+      if (Wire.endTransmission() == 0) return a;
     }
-    return found;
+    return -1;
   }
 
   bool begin(uint8_t sda, uint8_t scl, uint32_t hz = 400000) {

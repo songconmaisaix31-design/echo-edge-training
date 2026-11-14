@@ -35,6 +35,8 @@ arduino-cli compile --fqbn $board --output-dir $output $sketch
 
 Arduino CLI 要求主 `.ino` 与草图目录同名，因此在 Git 忽略的 `work/` 下使用 `EcwHud` 目录。`firmware/tools/flash.sh` 使用以脚本目录为基准的构建产物和 `boot_app0.bin` 路径。使用前按脚本核对文件位置。
 
+2026 年 11 月 15 日用上述板型完成 EcwHud 编译，生成应用、bootloader、分区表、合并映像、ELF 和 map 文件。应用 `EcwHud.ino.bin` 为 330,000 字节，编译报告的程序存储和全局变量占用分别为 329,849 字节和 24,880 字节。实机串口记录来自板上原有固件。
+
 从仓库根目录运行串口工具：
 
 ```powershell
