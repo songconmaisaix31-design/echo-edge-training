@@ -95,6 +95,12 @@ EchoNet-Pediatric 左室心内膜腔单帧分割模型，训练、独立测试�
 
 锁定独立测试折（原始折 0，186 名患儿、658 段视频、1,298 个有描迹帧）的帧级 Dice 为 0.9047、IoU 为 0.8323；按患儿平均的 Dice 为 0.9074、IoU 为 0.8362（A4C 0.8938 / 0.8147，PSAX 0.9151 / 0.8482）。权重、验证曲线、独立测试报告和接口测试记录通过 [stanford-lv-epoch8](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-lv-epoch8) 提供。
 
+## 公开数据扩展：CAMUS 与射血分数
+
+在 EchoNet-Pediatric 之外接入了 [CAMUS](docs/CAMUS.md) 公开数据（500 名病人、2CH/4CH、ED/ES 手工结构掩膜、Good/Medium/Poor 质量分级与 EF），新增多结构分割、影像质量分级和射血分数回归三项能力。数据源的可下载性、许可与引用见 [公开心超数据源调研](docs/PUBLIC_DATASETS.md)。
+
+CAMUS 独立测试（50 名留出病人、200 帧）：左室心内膜 Dice 0.9275、左室心肌 0.8553、左房 0.8835，前景平均 Dice 0.8888；影像质量患者-视位 macro-F1 0.591。EchoNet-Pediatric EF 模型患儿级 MAE 3.80，EF < 50% 异常筛查 AUROC 0.996（阳性 5 例，仅方向性证据）。模型与报告通过 [camus-structure-quality-v1](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/camus-structure-quality-v1) 与 [stanford-ef-epoch5](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-ef-epoch5) 提供。
+
 ## 数据交付
 
 请把 [Excel 标注模板](templates/儿童心超标注模板.xlsx) 和 [训练数据交付要求](docs/TRAINING_DATA.md) 发给团队。首批优先收集拟部署设备上的完整去标识儿童经胸心超检查，包含灰阶、彩色多普勒、低质量画面、过渡和补扫。由儿科心超专家先确认切面和采集质量标签定义，再交付源影像和已复核的 Excel。
