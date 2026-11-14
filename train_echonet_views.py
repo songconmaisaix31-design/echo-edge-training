@@ -1,18 +1,23 @@
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
+import re
+import sqlite3
 import tempfile
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
 import av
+import numpy as np
 import torch
 from av.video.reformatter import VideoReformatter
+from PIL import Image
 from torch import nn
 from torchvision.models import mobilenet_v3_small
 
@@ -22,6 +27,11 @@ from train_echo import WEIGHTS, Segment, fit_model, interval_bins, samples_in_in
 
 VIEWS = ("A4C", "PSAX")
 SOURCE_SPLITS = tuple(map(str, range(10)))
+TRAIN_SPLITS = SOURCE_SPLITS[2:]
+VAL_SPLITS = ("1",)
+TEST_SPLITS = ("0",)
+ROTATION_COUNTS = {"train": 6354, "val": 798, "test": 658}
+PUBLISHED_NAME = re.compile(r"(CR[0-9a-z]{7})-CR[0-9a-z]{7}-[0-9]{6}[.]avi", re.ASCII)
 
 
 class ViewModel(nn.Module):
@@ -84,6 +94,28 @@ def avi_frames(archive, path):
         yield video_frames(container, stream)
 
 
+def published_patient(path):
+    matched = PUBLISHED_NAME.fullmatch(PurePosixPath(path).name)
+    if matched is None:
+        raise ValueError("发布文件名缺少符合格式的匿名患儿编号")
+    return matched[1]
+
+
+def verify_rotation(clips):
+    patients = {}
+    counts = Counter()
+    for path, _, split, _, _ in clips:
+        patient = published_patient(path)
+        fold = str(int(hashlib.sha1(patient.encode("utf-8"), usedforsecurity=False).hexdigest(), 16) % 10)
+        if split != fold or patients.setdefault(patient, split) != split:
+            raise ValueError("原始 Split 与发布方患儿分组算法不一致")
+        counts["test" if split == "0" else "val" if split == "1" else "train"] += 1
+    if counts != ROTATION_COUNTS:
+        raise ValueError(f"第 0 次轮转片段数量与本批归档不一致：{dict(counts)}")
+    return {"clips": dict(counts), "patients": {role: sum(fold in folds for fold in patients.values())
+            for role, folds in {"train": TRAIN_SPLITS, "val": VAL_SPLITS, "test": TEST_SPLITS}.items()}}
+
+
 def inspect_avi(archive, clip, args):
     path, view, split, table, line = clip
     try:
@@ -102,6 +134,9 @@ def inspect_avi(archive, clip, args):
 def preflight(archive, args):
     errors = []
     clips = read_sources(archive, errors)
+    rotation = None
+    if not errors:
+        rotation = verify_rotation(clips)
     prepared = []
     with ThreadPoolExecutor(max_workers=4) as executor:
         for start in range(0, len(clips), 128):
@@ -121,10 +156,10 @@ def preflight(archive, args):
             errors.append({"view": view, "error": "缺少可用的切面视频"})
 
     train_splits, val_splits = set(args.train_splits or ()), set(args.val_splits or ())
-    roles = {"train": train_splits, "val": val_splits}
+    roles = {"train": train_splits, "val": val_splits, "test": set(TEST_SPLITS)}
     if train_splits or val_splits:
-        if not train_splits or not val_splits or train_splits & val_splits:
-            errors.append({"error": "训练和验证均须指定原始 Split，且两者不得重叠"})
+        if train_splits != set(TRAIN_SPLITS) or val_splits != set(VAL_SPLITS):
+            errors.append({"error": "只支持发布方第 0 次轮转：训练 2–9、验证 1、测试 0"})
         for role, selection in roles.items():
             for view in VIEWS:
                 if not counts[view].keys() & selection:
@@ -132,7 +167,7 @@ def preflight(archive, args):
     blockers = []
     if not args.stanford_authorization_confirmed:
         blockers.append("尚未确认斯坦福授权覆盖拟进行的训练及权重用途")
-    if not args.patient_grouping_confirmed:
+    if rotation is None or not args.patient_grouping_confirmed:
         blockers.append("尚未核实原始 Split 的患儿级隔离")
     if not train_splits or not val_splits:
         blockers.append("尚未指定哪些原始 Split 用于训练和验证")
@@ -141,6 +176,7 @@ def preflight(archive, args):
         "training_readiness": "blocked" if errors or blockers else "ready",
         "sample_fps": args.sample_fps, "max_frames_per_clip": args.max_frames_per_segment,
         "source_split_counts": {view: dict(sorted(counts[view].items())) for view in VIEWS},
+        "verified_rotation_zero": rotation,
         "selected_split_roles": {role: sorted(selection) for role, selection in roles.items()},
         "decoded_clips": len(prepared), "decoded_frames": sum(item[2] for item in prepared),
         "frames_selected_for_preprocessing": sum(item[3] for item in prepared),
@@ -158,29 +194,83 @@ def train_views(archive, args, prepared):
     torch.set_num_threads(1)
     torch.manual_seed(args.seed)
     torch.hub.set_dir(str(args.cache_dir / "torch-hub"))
-    args.run_dir.mkdir(parents=True, exist_ok=False)
+    if args.resume:
+        if not (args.run_dir / "last.pt").is_file():
+            raise ValueError("恢复时必须指定已有上一完整轮状态的训练目录")
+    else:
+        args.run_dir.mkdir(parents=True, exist_ok=False)
     train_splits = set(args.train_splits)
     val_splits = set(args.val_splits)
     records = defaultdict(list)
-    with tempfile.TemporaryDirectory(dir=args.run_dir) as scratch:
-        for clip_number, ((path, _, source_split, _, _), segment, _, expected) in enumerate(prepared):
+    metadata = {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits),
+                                 "test": list(TEST_SPLITS)}, "initialization": "imagenet1k_v1"}
+    labels = {"view": {view: {"name": view} for view in VIEWS}}
+    if args.existing_frame_cache is not None:
+        count = 0
+        spot_checks = {}
+        for (path, _, split, _, _), segment, _, expected in prepared:
+            if split in train_splits | val_splits:
+                role = "train" if split in train_splits else "val"
+                patient = published_patient(path)
+                records[role].extend((index, segment.targets, patient) for index in range(count, count + expected))
+                if count // 14_000 not in spot_checks:
+                    spot_checks[count // 14_000] = (path, segment, count, expected)
+                count += expected
+        print(f"核验并读取 {count} 张现有缓存帧", flush=True)
+        pixels = torch.empty((count, 224, 224, 3), dtype=torch.uint8)
+        with closing(sqlite3.connect(args.existing_frame_cache.resolve().as_uri() + "?mode=ro", uri=True)) as cache:
+            if cache.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                raise ValueError("现有 SQLite 抽帧缓存完整性检查失败")
+            if cache.execute("SELECT count(*), min(id), max(id) FROM frames").fetchone() != (count, 1, count):
+                raise ValueError("现有抽帧缓存与预检数量或顺序不一致")
+            array = pixels.numpy()
+            for key, png in cache.execute("SELECT id, png FROM frames ORDER BY id"):
+                with Image.open(io.BytesIO(png)) as image:
+                    if image.mode != "RGB" or image.size != (224, 224):
+                        raise ValueError("现有抽帧缓存的格式与训练配置不一致")
+                    array[key - 1] = np.asarray(image)
+        for path, segment, start, expected in spot_checks.values():
+            with open_avi(archive, path) as container:
+                stream = container.streams.video[0]
+                stream.codec_context.thread_count = 1
+                samples = samples_in_intervals(video_frames(container, stream), [segment], [interval_bins(segment, args)])
+                scaler = VideoReformatter()
+                for cached, (_, frame) in zip(array[start:start + expected], samples, strict=True):
+                    if not np.array_equal(cached, np.asarray(resize_and_pad(frame, scaler))):
+                        raise ValueError("缓存抽帧与同一归档重解码的结果不一致")
+        with args.existing_frame_cache.open("rb") as source:
+            cache_digest = hashlib.file_digest(source, "sha256").hexdigest()
+        metadata["frame_cache_sha256"] = cache_digest
+        print(f"缓存已读入内存，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
+        fit_model(args, records, labels, ViewModel(weights=None) if args.resume else ViewModel(),
+                  metadata, pixels.permute(0, 3, 1, 2), resumable=True)
+        return
+    args.cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=args.cache_dir) as scratch, closing(sqlite3.connect(
+            Path(scratch) / "frames.sqlite")) as frame_cache:
+        frame_cache.execute("CREATE TABLE frames (id INTEGER PRIMARY KEY, png BLOB NOT NULL)")
+        print("开始按锁定的训练和验证分组抽帧", flush=True)
+        for (path, _, source_split, _, _), segment, _, expected in prepared:
             if source_split not in train_splits | val_splits:
                 continue
             role = "train" if source_split in train_splits else "val"
             reformatter = VideoReformatter()
             count = 0
+            patient = published_patient(path)
             with avi_frames(archive, path) as frames:
                 samples = samples_in_intervals(frames, [segment], [interval_bins(segment, args)])
                 for _, frame in samples:
-                    output = Path(scratch) / f"{clip_number}_{count}.png"
-                    resize_and_pad(frame, reformatter).save(output, compress_level=1)
-                    records[role].append((output, segment.targets))
+                    output = io.BytesIO()
+                    resize_and_pad(frame, reformatter).save(output, format="PNG", compress_level=1)
+                    key = frame_cache.execute("INSERT INTO frames (png) VALUES (?)", (output.getvalue(),)).lastrowid
+                    records[role].append((key, segment.targets, patient))
                     count += 1
             if count != expected:
                 raise ValueError(f"{path} 的实际抽帧数量与预检不一致")
-        labels = {"view": {view: {"name": view} for view in VIEWS}}
-        fit_model(args, records, labels, ViewModel(), scratch,
-                  {"source_splits": {"train": sorted(train_splits), "val": sorted(val_splits)}})
+        frame_cache.commit()
+        print(f"抽帧完成，训练 {len(records['train'])} 帧，验证 {len(records['val'])} 帧。开始 CUDA 微调。", flush=True)
+        fit_model(args, records, labels, ViewModel(weights=None) if args.resume else ViewModel(),
+                  metadata, frame_cache, resumable=True)
 
 
 def main():
@@ -188,14 +278,16 @@ def main():
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--preflight-only", action="store_true")
-    parser.add_argument("--train-splits", choices=SOURCE_SPLITS, nargs="+")
-    parser.add_argument("--val-splits", choices=SOURCE_SPLITS, nargs="+")
+    parser.add_argument("--train-splits", choices=SOURCE_SPLITS, nargs="+", default=TRAIN_SPLITS)
+    parser.add_argument("--val-splits", choices=SOURCE_SPLITS, nargs="+", default=VAL_SPLITS)
     parser.add_argument("--stanford-authorization-confirmed", action="store_true")
     parser.add_argument("--patient-grouping-confirmed", action="store_true")
     parser.add_argument("--sample-fps", type=float, default=10)
     parser.add_argument("--max-frames-per-clip", dest="max_frames_per_segment", type=int, default=8)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--existing-frame-cache", type=Path, help="同一归档及抽帧参数生成的完整 SQLite 缓存")
+    parser.add_argument("--resume", action="store_true", help="从该运行目录的上一完整轮恢复")
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--head-only-epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -203,6 +295,8 @@ def main():
     parser.add_argument("--head-lr", type=float, default=3e-4)
     parser.add_argument("--backbone-lr", type=float, default=3e-5)
     args = parser.parse_args()
+    if not args.preflight_only and not args.stanford_authorization_confirmed:
+        parser.error("开训前需要确认斯坦福书面许可覆盖训练与权重用途")
     if args.report.suffix.lower() != ".json" or args.report.resolve() == args.archive.resolve():
         parser.error("--report 需要独立的 JSON 输出路径")
     if args.run_dir is not None and args.report.resolve().is_relative_to(args.run_dir.resolve()):

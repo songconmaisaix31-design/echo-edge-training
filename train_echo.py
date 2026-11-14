@@ -1,9 +1,12 @@
 import argparse
+import hashlib
+import io
 import json
 import math
 import random
 import shutil
 import tempfile
+import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from contextlib import closing, contextmanager, nullcontext
@@ -24,7 +27,7 @@ from pydicom.errors import InvalidDicomError
 from pydicom.misc import is_dicom
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
 from benchmark_echo import configure_video, normalize_image, preprocess, resize_and_pad
@@ -468,17 +471,57 @@ def interval_bins(row, args):
     )))
 
 
+def whole_video_interval(last_offset):
+    if last_offset is None:
+        raise ValueError("视频没有可解码帧")
+    return Segment("", "", 0, math.floor(last_offset) + 1, (IGNORE, IGNORE))
+
+
+def whole_video_samples(open_video, args, *, decode_passes=2):
+    if decode_passes == 1:
+        with open_video() as container:
+            stream = container.streams.video[0]
+            stream.codec_context.thread_count = 1
+            decoded = list(video_frames(container, stream))
+            interval = whole_video_interval(decoded[-1][0] if decoded else None)
+            selected = list(samples_in_intervals(decoded, [interval], [interval_bins(interval, args)]))
+        del decoded
+        yield from selected
+        return
+    with open_video() as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = 1
+        last_offset = None
+        for last_offset, _ in video_frames(container, stream):
+            pass
+    interval = whole_video_interval(last_offset)
+    with open_video() as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = 1
+        yield from samples_in_intervals(video_frames(container, stream), [interval], [interval_bins(interval, args)])
+
+
 class FrameDataset(Dataset):
-    def __init__(self, rows, normalization):
+    def __init__(self, rows, normalization, frame_cache=None):
         self.rows = rows
         self.normalization = normalization
+        self.frame_cache = frame_cache
 
     def __len__(self):
         return len(self.rows)
 
+    def __getitems__(self, indices):
+        if self.frame_cache is None or not isinstance(self.frame_cache, torch.Tensor):
+            return [self[index] for index in indices]
+        paths, targets = zip(*(self.rows[index] for index in indices), strict=True)
+        frames = self.frame_cache[list(paths)]
+        return list(zip(frames, torch.as_tensor(targets, dtype=torch.long), strict=True))
+
     def __getitem__(self, index):
         path, targets = self.rows[index]
-        with Image.open(path) as image:
+        source = path if self.frame_cache is None else io.BytesIO(self.frame_cache.execute(
+            "SELECT png FROM frames WHERE id = ?", (path,)).fetchone()[0])
+        with Image.open(source) as image:
             return normalize_image(image, self.normalization), torch.tensor(targets, dtype=torch.long)
 
 
@@ -497,7 +540,7 @@ def prepare_frames(args, clips, segments, assignments, scratch):
                 for index, frame in selected_interval_frames(path, rows, sample_bins):
                     target = scratch / f"{clip_index}_{index}_{counts[index]}.png"
                     resize_and_pad(frame, scaler).save(target, compress_level=1)
-                    records[split].append((target, rows[index].targets))
+                    records[split].append((target, rows[index].targets, clip.patient))
                     counts[index] += 1
             missing = [row.key for row, count in zip(rows, counts, strict=True) if count == 0]
             if missing:
@@ -695,9 +738,14 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
     matrices = [torch.zeros((size, size), dtype=torch.int64, device="cuda") for size in sizes]
     loss_total = torch.zeros((), device="cuda")
     context = nullcontext() if training else torch.inference_mode()
+    normalization = WEIGHTS.transforms()
+    mean = torch.tensor(normalization.mean, device="cuda")[None, :, None, None]
+    std = torch.tensor(normalization.std, device="cuda")[None, :, None, None]
     with context:
         for images, targets in loader:
             images = images.to("cuda", non_blocking=True)
+            if images.dtype == torch.uint8:
+                images = (images.float().div_(255) - mean) / std
             targets = targets.to("cuda", non_blocking=True)
             if training:
                 optimizer.zero_grad(set_to_none=True)
@@ -706,8 +754,7 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
                 losses = [F.cross_entropy(logits, target, ignore_index=IGNORE, reduction="sum") /
                           target.ne(IGNORE).sum().clamp_min(1) for logits, target in zip(outputs, targets.T)]
                 loss = sum(losses)
-            if not torch.isfinite(loss).item():
-                raise FloatingPointError("训练或验证损失出现非有限值")
+            torch._assert_async(torch.isfinite(loss), "训练或验证损失出现非有限值")
             if training:
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -716,8 +763,8 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
             for matrix, logits, target, size in zip(matrices, outputs, targets.T, sizes):
                 predicted = logits.detach().argmax(dim=1)
                 valid = target.ne(IGNORE)
-                pairs = size * target[valid] + predicted[valid]
-                matrix += torch.bincount(pairs, minlength=size * size).reshape(size, size)
+                pairs = size * target.masked_fill(~valid, 0) + predicted
+                matrix.view(-1).scatter_add_(0, pairs, valid.to(torch.int64))
     metrics = {"loss": float(loss_total.item() / len(loader))}
     if not math.isfinite(metrics["loss"]):
         raise FloatingPointError("训练或验证损失出现非有限值")
@@ -730,11 +777,27 @@ def run_epoch(model, loader, sizes, optimizer=None, scaler=None, tasks=TASKS):
     return metrics
 
 
-def fit_model(args, records, labels, model, directory, checkpoint_metadata=None):
+def publish_training_result(run_dir, best_weights, history, *, write_best):
+    if write_best:
+        temporary = run_dir / "best.pt.partial"
+        torch.save(best_weights, temporary)
+        temporary.replace(run_dir / "best.pt")
+    metrics = run_dir / "metrics.json.partial"
+    metrics.write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    metrics.replace(run_dir / "metrics.json")
+
+
+def fit_model(args, records, labels, model, checkpoint_metadata=None, frame_cache=None, *, resumable=False):
     tasks = tuple(labels)
     normalization = WEIGHTS.transforms()
-    loaders = {split: DataLoader(FrameDataset(records[split], normalization), batch_size=args.batch_size,
-                                 shuffle=split == "train", pin_memory=True) for split in ("train", "val")}
+    train_groups = Counter(group for _, _, group in records["train"])
+    generator = torch.Generator().manual_seed(args.seed)
+    sampler = WeightedRandomSampler([1 / train_groups[group] for _, _, group in records["train"]],
+                                    len(records["train"]), generator=generator)
+    loaders = {split: DataLoader(FrameDataset([(path, target) for path, target, _ in records[split]], normalization,
+                                              frame_cache),
+                                 batch_size=args.batch_size, sampler=sampler if split == "train" else None,
+                                 pin_memory=True) for split in ("train", "val")}
     sizes = [len(labels[task]) for task in tasks]
     model = model.to("cuda")
     model.features.requires_grad_(False)
@@ -745,26 +808,61 @@ def fit_model(args, records, labels, model, directory, checkpoint_metadata=None)
     ])
     scaler = torch.amp.GradScaler("cuda")
     history = []
+    config = {key: getattr(args, key) for key in ("batch_size", "epochs", "head_only_epochs", "seed", "head_lr",
+                                                 "backbone_lr", "sample_fps", "max_frames_per_segment")}
+    config.update({"training_sampler": "inverse_patient_frame_count", "torch_version": str(torch.__version__),
+                   "device": torch.cuda.get_device_name(), "amp_dtype": "float16"})
+    if resumable:
+        config.update(checkpoint_metadata or {})
+    state_path = args.run_dir / "last.pt"
     best = -math.inf
-    for epoch in range(args.epochs):
-        if epoch == args.head_only_epochs:
+    best_weights = None
+    if resumable and state_path.is_file():
+        state = torch.load(state_path, weights_only=True, map_location="cpu")
+        if state["config"] != config:
+            raise ValueError("恢复训练参数与保存的状态不一致")
+        model.load_state_dict(state["model"], strict=True)
+        optimizer.load_state_dict(state["optimizer"])
+        scaler.load_state_dict(state["scaler"])
+        generator.set_state(state["sampler"])
+        torch.set_rng_state(state["cpu_rng"])
+        torch.cuda.set_rng_state(state["cuda_rng"])
+        history, best, best_weights = state["history"], state["best_score"], state["best_weights"]
+        del state
+        publish_training_result(args.run_dir, best_weights, history, write_best=True)
+        print(f"已恢复 {len(history)}/{args.epochs} 轮", flush=True)
+    else:
+        (args.run_dir / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    for epoch in range(len(history), args.epochs):
+        torch.cuda.reset_peak_memory_stats()
+        started = time.perf_counter()
+        if epoch >= args.head_only_epochs:
             model.features[-3:].requires_grad_(True)
         training = run_epoch(model, loaders["train"], sizes, optimizer, scaler, tasks)
         validation = run_epoch(model, loaders["val"], sizes, tasks=tasks)
         score = sum(validation[task]["macro_f1"] for task in tasks) / len(tasks)
-        row = {"epoch": epoch + 1, "train": training, "val": validation}
+        row = {"epoch": epoch + 1, "train": training, "val": validation,
+               "elapsed_seconds": time.perf_counter() - started,
+               "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
+               "peak_cuda_reserved_bytes": torch.cuda.max_memory_reserved()}
         history.append(row)
-        print(json.dumps(row, ensure_ascii=False), flush=True)
         if score > best:
             best = score
-            temporary = Path(directory) / "best.pt"
-            torch.save({"model": model.state_dict(), "labels": labels, "epoch": epoch + 1,
+            best_weights = {"model": {key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
+                        "labels": labels, "epoch": epoch + 1,
                         "val_macro_f1": score, "preprocessing": PREPROCESSING,
-                        "sampling": {"sample_fps": args.sample_fps,
-                                     "max_frames_per_segment": args.max_frames_per_segment},
-                        **(checkpoint_metadata or {})}, temporary)
-            temporary.replace(args.run_dir / "best.pt")
-    (args.run_dir / "metrics.json").write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        "sampling": {"sample_fps": args.sample_fps, "max_frames_per_segment": args.max_frames_per_segment},
+                        "training_config": config,
+                        **(checkpoint_metadata or {})}
+        if resumable:
+            temporary = state_path.with_suffix(".partial")
+            torch.save({"config": config, "model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                        "scaler": scaler.state_dict(), "sampler": generator.get_state(), "cpu_rng": torch.get_rng_state(),
+                        "cuda_rng": torch.cuda.get_rng_state(), "history": history,
+                        "best_score": best, "best_weights": best_weights}, temporary)
+            temporary.replace(state_path)
+        publish_training_result(args.run_dir, best_weights, history, write_best=best_weights["epoch"] == epoch + 1)
+        print(json.dumps(row, ensure_ascii=False), flush=True)
 
 
 def train(args, inputs):
@@ -774,8 +872,11 @@ def train(args, inputs):
     with tempfile.TemporaryDirectory(dir=args.run_dir) as directory:
         records = prepare_frames(args, inputs.clips, inputs.segments, inputs.assignments, Path(directory))
         sizes = [len(inputs.labels[task]) for task in TASKS]
-        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory,
-                  {"patient_splits": inputs.assignments})
+        with args.labels.open("rb") as source:
+            annotations_digest = hashlib.file_digest(source, "sha256").hexdigest()
+        fit_model(args, records, inputs.labels, EchoModel(*sizes),
+                  {"patient_splits": inputs.assignments, "annotations_sha256": annotations_digest,
+                   "initialization": "imagenet1k_v1"})
 
 
 def verify_logits(model, image, name):

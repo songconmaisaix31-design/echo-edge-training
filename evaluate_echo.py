@@ -2,331 +2,282 @@ import argparse
 import hashlib
 import json
 import math
-import re
-import tempfile
-from collections import Counter, defaultdict
-from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+import random
+import sys
+from collections import defaultdict
+from pathlib import Path
+from statistics import quantiles
 from zipfile import ZipFile
 
-import numpy as np
 import torch
 from av.video.reformatter import VideoReformatter
 
+import evaluate_patient_heldout
 from benchmark_echo import normalize_image, resize_and_pad
-from train_echo import (
-    IGNORE, PREPROCESSING, TASKS, WEIGHTS, EchoModel, explicit_patient_splits, interval_bins,
-    local_media, open_archive, read_annotations, samples_in_intervals, selected_interval_frames,
-)
-from train_echonet_views import SOURCE_SPLITS, VIEWS, ViewModel, avi_frames, inspect_avi, read_sources
+from train_echo import (IGNORE, PREPROCESSING, TASKS, WEIGHTS, EchoModel, interval_bins, local_media, open_archive,
+                        read_annotations, selected_interval_frames, whole_video_samples)
+from train_echonet_views import (TEST_SPLITS, TRAIN_SPLITS, VAL_SPLITS, VIEWS, ViewModel, open_avi, published_patient,
+                                 read_sources, verify_rotation)
 
 
-BOOTSTRAP_SEED = 42
-BOOTSTRAP_REPEATS = 1000
-STANFORD_FILENAME = re.compile(r"(CR[0-9a-z]{7})-CR[0-9a-z]{7}-[0-9]{6}\.avi")
+def file_digest(path):
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
-@dataclass(frozen=True)
-class Prediction:
-    patient: str
-    targets: tuple[int, ...]
-    decisions: tuple[int, ...]
-    device: str = ""
-    mode: str = ""
-    site: str = ""
-
-
-def sampling_config(args):
-    return {"sample_fps": args.sample_fps, "max_frames_per_segment": args.max_frames_per_segment}
-
-
-def load_checkpoint(args, labels, split_metadata, constructor, thresholds):
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    saved_labels = checkpoint.get("labels")
-    if saved_labels is None:
-        raise ValueError("checkpoint 缺少心超任务类别，需使用本仓库训练入口生成的 best.pt")
-    if tuple(saved_labels) != tuple(labels) or any(tuple(saved_labels[task]) != tuple(labels[task]) for task in labels):
-        raise ValueError("checkpoint 的任务和类别顺序与评估数据不一致")
-    if checkpoint["preprocessing"] != PREPROCESSING or checkpoint.get("sampling") != sampling_config(args):
-        raise ValueError("checkpoint 的预处理或抽帧参数与评估配置不一致")
-    for key, value in split_metadata.items():
-        if checkpoint.get(key) != value:
-            raise ValueError(f"checkpoint 的 {key} 与本次分组不一致")
-    model = constructor()
+def checkpoint_model(path, device):
+    with path.open("rb") as source:
+        fingerprint = hashlib.file_digest(source, "sha256").hexdigest()
+        source.seek(0)
+        checkpoint = torch.load(source, weights_only=True, map_location="cpu")
+    labels = {task: tuple(codes) for task, codes in checkpoint["labels"].items()}
+    if tuple(labels) == TASKS and all(len(codes) >= 2 for codes in labels.values()):
+        model = EchoModel(*(len(labels[task]) for task in TASKS), weights=None)
+    elif labels == {"view": VIEWS}:
+        model = ViewModel(weights=None)
+    else:
+        raise ValueError("checkpoint 模型类型或标签顺序无效")
+    sampling = checkpoint.get("sampling", {})
+    fps = sampling.get("sample_fps", 0)
+    frames = sampling.get("max_frames_per_segment", 0)
+    if (checkpoint.get("preprocessing") != PREPROCESSING or not isinstance(fps, (int, float))
+            or not math.isfinite(fps) or fps <= 0 or type(frames) is not int or frames <= 0):
+        raise ValueError("checkpoint 缺少已记录的训练预处理和抽样参数")
     model.load_state_dict(checkpoint["model"], strict=True)
-    model.eval().to(args.device)
-    with args.checkpoint.open("rb") as file:
-        identity = hashlib.file_digest(file, "sha256").hexdigest()
-    return model, {
-        "name": args.checkpoint.name, "sha256": identity, "epoch": checkpoint["epoch"],
-        "device": args.device, "precision": "float32",
-        "class_order": {task: list(entries) for task, entries in labels.items()},
-        "preprocessing": PREPROCESSING, "confidence_thresholds": dict(zip(labels, thresholds, strict=True)),
-        "aggregation": "mean_logits_then_softmax", "threshold_rule": "confidence_below_threshold_is_rejected",
+    return model.eval().to(device), checkpoint, labels, fingerprint
+
+
+def locked_policy(policy, labels):
+    thresholds = policy["min_confidence"]
+    if set(thresholds) != set(labels) or any(type(value) not in (float, int) or not 0 <= value <= 1
+                                             for value in thresholds.values()):
+        raise ValueError("每个输出头都需要一个已确定的 [0,1] 置信阈值")
+    allowed = policy.get("usable_quality", [])
+    low = policy.get("low_quality", [])
+    reject = policy.get("reject_quality", [])
+    if "quality" in labels:
+        groups = (allowed, low, reject)
+        if any(not isinstance(group, list) or any(not isinstance(code, str) for code in group) for group in groups):
+            raise ValueError("质量决策代码需要填写为字符串列表")
+        if (not allowed or not low or sum(map(len, groups)) != len(set(allowed + low + reject))
+                or set(allowed + low + reject) != set(labels["quality"])):
+            raise ValueError("临床确认的可用、低质量和拒判代码需互不重叠并覆盖质量字典")
+    elif allowed or low or reject:
+        raise ValueError("单切面模型没有质量代码")
+    return {"min_confidence": thresholds, "usable_quality": allowed, "low_quality": low, "reject_quality": reject}
+
+
+def decision(probabilities, cutoff, rejected=()):
+    score, index = probabilities.max(dim=0)
+    index = int(index)
+    return index if float(score) >= cutoff and index not in rejected else len(probabilities)
+
+
+class IntervalInference:
+    def __init__(self, model, device, labels, policy):
+        self.model = model
+        self.device = device
+        self.labels = labels
+        self.policy = policy
+        self.rejected = {task: [codes.index(code) for code in policy["reject_quality"]] if task == "quality" else []
+                         for task, codes in labels.items()}
+        self.normalization = WEIGHTS.transforms()
+
+    @torch.inference_mode()
+    def predict(self, frames, count):
+        sums = [torch.zeros((count, len(codes)), device=self.device) for codes in self.labels.values()]
+        support = [0] * count
+        reformatter = VideoReformatter()
+        for index, frame in frames:
+            image = normalize_image(resize_and_pad(frame, reformatter), self.normalization)
+            outputs = self.model(image.unsqueeze(0).to(self.device))
+            for total, logits in zip(sums, outputs, strict=True):
+                total[index] += logits[0].softmax(dim=0)
+            support[index] += 1
+        if not all(support) or any(not values.isfinite().all() for values in sums):
+            raise ValueError("有评估区间没有有效模型输入或输出")
+        return [tuple(decision(values[i] / support[i], self.policy["min_confidence"][task], self.rejected[task])
+                      for task, values in zip(self.labels, sums, strict=True)) for i in range(count)]
+
+
+def divide(numerator, denominator):
+    return numerator / denominator if denominator else None
+
+
+def quality_metrics(matrix, usable, low):
+    count = sum(map(sum, matrix))
+    rejected = sum(row[-1] for row in matrix)
+    return {
+        "low_quality_false_pass": divide(sum(matrix[i][j] for i in low for j in usable),
+                                         sum(sum(matrix[i]) for i in low)),
+        "reject_rate": divide(rejected, count),
+        "coverage": divide(count - rejected, count),
     }
 
 
-@torch.inference_mode()
-def predict_intervals(model, samples, rows, device, thresholds):
-    normalization = WEIGHTS.transforms()
-    scaler = VideoReformatter()
-    frames = [[] for _ in rows]
-    for index, frame in samples:
-        frames[index].append(normalize_image(resize_and_pad(frame, scaler), normalization))
-    results = []
-    for row, images in zip(rows, frames, strict=True):
-        if not images:
-            raise ValueError(f"区间 {row.key} 没有抽到真实帧")
-        outputs = model(torch.stack(images).to(device))
-        predictions = []
-        for logits, threshold in zip(outputs, thresholds, strict=True):
-            if not torch.isfinite(logits).all().item():
-                raise ValueError(f"区间 {row.key} 的模型输出包含非有限值")
-            confidence, index = logits.float().mean(0).softmax(0).max(0)
-            predictions.append(int(index) if float(confidence) >= threshold else IGNORE)
-        results.append((tuple(predictions), len(images)))
-    return results
+def confusion(rows, classes):
+    matrix = [[0] * (classes + 1) for _ in range(classes)]
+    for truth, predicted, _ in rows:
+        matrix[truth][predicted] += 1
+    return matrix
 
 
-def ratio_with_ci(eligible_patients, numerators, denominators):
-    numerator, denominator = int(numerators[0]), int(denominators[0])
-    available = denominators[1:] > 0
-    ci = None
-    if eligible_patients >= 2 and available.any():
-        ci = np.quantile(numerators[1:][available] / denominators[1:][available], (0.025, 0.975)).tolist()
-    return {"value": numerator / denominator if denominator else None, "numerator": numerator,
-            "denominator": denominator, "eligible_patients": eligible_patients, "ci95": ci,
-            "bootstrap_valid_repeats": int(available.sum())}
-
-
-def task_report(predictions, task_index, codes, quality_classes=None):
-    size = len(codes)
-    patients = defaultdict(lambda: np.zeros((size, size + 1), dtype=np.int64))
-    for entry in predictions:
-        target, decision = entry.targets[task_index], entry.decisions[task_index]
-        if target != IGNORE:
-            patients[entry.patient][target, size if decision == IGNORE else decision] += 1
-
-    matrices = np.array(list(patients.values()), dtype=np.int64).reshape(-1, size, size + 1)
-    totals = np.zeros((BOOTSTRAP_REPEATS + 1, size, size + 1), dtype=np.int64)
-    totals[0] = matrices.sum(0)
-    if len(matrices) >= 2:
-        rng = np.random.default_rng(BOOTSTRAP_SEED)
-        draws = rng.multinomial(len(matrices), np.full(len(matrices), 1 / len(matrices)), size=BOOTSTRAP_REPEATS)
-        totals[1:] = (draws @ matrices.reshape(len(matrices), -1)).reshape(-1, size, size + 1)
-    supports = totals.sum(2)
-    segments = supports.sum(1)
-    rejected = totals[:, :, -1].sum(1)
-    result = {
-        "patients": len(matrices), "labeled_segments": int(segments[0]),
-        "confusion": {"true_labels": codes, "predicted_labels": codes + [None], "counts": totals[0].tolist()},
-        "missing_classes": [code for i, code in enumerate(codes) if not supports[0, i]],
-        "per_class": {code: {"support": int(supports[0, i]),
-                             "recall": ratio_with_ci(int(np.count_nonzero(matrices[:, i].sum(1))),
-                                                     totals[:, i, i], supports[:, i])}
-                      for i, code in enumerate(codes)},
-        "coverage": ratio_with_ci(len(matrices), segments - rejected, segments),
-        "rejection_rate": ratio_with_ci(len(matrices), rejected, segments),
-    }
-    if quality_classes is not None:
-        acceptable, low_codes = quality_classes
-        allowed = codes.index(acceptable)
-        low = [codes.index(code) for code in low_codes]
-        result["false_pass"] = {
-            "acceptable_class": acceptable, "low_quality_classes": low_codes,
-            **ratio_with_ci(int(np.count_nonzero(matrices[:, low, :].sum((1, 2)))),
-                            totals[:, low, allowed].sum(1), supports[:, low].sum(1)),
-        }
+def summarize(rows, codes, usable=None, low=None):
+    matrix = confusion(rows, len(codes))
+    counts = list(map(sum, matrix))
+    result = {"classes": list(codes), "prediction_columns": [*codes, None], "confusion": matrix,
+              "support": counts, "patients_per_class": [len({row[2] for row in rows if row[0] == index})
+                                                        for index in range(len(codes))],
+              "recall": [divide(row[i], counts[i]) for i, row in enumerate(matrix)],
+              "missing_classes": [code for code, count in zip(codes, counts, strict=True) if not count]}
+    if usable is None:
+        return result
+    groups = defaultdict(list)
+    for row in rows:
+        groups[row[2]].append(row)
+    patients = list(groups.values())
+    rng = random.Random(42)
+    samples = defaultdict(list)
+    for _ in range(1000 if len(patients) >= 2 else 0):
+        selected = [row for group in rng.choices(patients, k=len(patients)) for row in group]
+        for name, value in quality_metrics(confusion(selected, len(codes)), usable, low).items():
+            if value is not None:
+                samples[name].append(value)
+    result["quality"] = {name: {"value": value, "patient_bootstrap_95": (
+        [quantiles(samples[name], n=40, method="inclusive")[i] for i in (0, 38)] if len(samples[name]) >= 2 else None
+    )} for name, value in quality_metrics(matrix, usable, low).items()}
     return result
 
 
-def scoring_report(predictions, labels, quality_classes=None):
-    return {task: task_report(predictions, i, list(entries), quality_classes if task == "quality" else None)
-            for i, (task, entries) in enumerate(labels.items())}
-
-
-def strata_report(predictions, labels, quality_classes, training_sites):
-    report = {}
-    for field in ("device", "mode", "site"):
-        groups = defaultdict(list)
-        for item in predictions:
-            groups[getattr(item, field) or None].append(item)
-        report[field] = [
-            {"value": key, "metrics": scoring_report(rows, labels, quality_classes)}
-            for key, rows in groups.items()
-        ]
-    report["sites_absent_from_train_and_val"] = sorted(
-        {entry.site for entry in predictions if entry.site} - training_sites,
-    )
-    return report
-
-
-def team_evaluation(args):
-    labels, clips, segments = read_annotations(args.labels)
-    assignments = explicit_patient_splits(clips)
-    if set(assignments.values()) != {"train", "val", "test"}:
-        raise ValueError("视频清单需要显式指定 train、val 和 test")
+def team_rows(args, checkpoint, labels, inference):
+    with args.labels.open("rb") as source:
+        if hashlib.file_digest(source, "sha256").hexdigest() != checkpoint.get("annotations_sha256"):
+            raise ValueError("工作簿与训练时锁定的版本不一致")
+    observed_labels, clips, segments = read_annotations(args.labels)
+    if {task: tuple(codes) for task, codes in observed_labels.items()} != labels:
+        raise ValueError("当前工作簿标签顺序与训练 checkpoint 不一致")
+    assignments = checkpoint.get("patient_splits")
+    if not assignments or any(role not in {"train", "val", "test"} for role in assignments.values()):
+        raise ValueError("checkpoint 缺少冻结的患儿分组")
+    if any(clip.split and assignments.get(clip.patient) != clip.split for clip in clips.values()):
+        raise ValueError("工作簿患儿分组与训练 checkpoint 不一致")
     if any(clips[key].patient not in assignments for key in segments):
-        raise ValueError("视频清单存在有已确认区间但未分组的患儿")
-    selected = [(clips[key], rows) for key, rows in segments.items() if assignments[clips[key].patient] == "test"]
-    if not selected:
-        raise ValueError("测试集缺少已确认区间")
-    if args.acceptable_quality not in labels["quality"]:
-        raise ValueError("--acceptable-quality 必须为标签字典中的 quality 代码")
-    low = sorted(set(args.low_quality))
-    if args.acceptable_quality in low or set(low) - labels["quality"].keys():
-        raise ValueError("--low-quality 需使用标签字典中的质量代码，且不能包含可用类别")
-    quality_classes = (args.acceptable_quality, low)
-    thresholds = (args.view_threshold, args.quality_threshold)
-    model, model_info = load_checkpoint(
-        args, labels, {"patient_splits": assignments},
-        lambda: EchoModel(*(len(labels[task]) for task in TASKS), weights=None), thresholds,
-    )
-    predictions, sampled = [], 0
-    with open_archive(args.media) as archive, tempfile.TemporaryDirectory(dir=args.report.parent) as scratch:
-        for clip, rows in selected:
-            with local_media(args.media, archive, clip.path, scratch) as path:
-                samples = selected_interval_frames(path, rows, [interval_bins(row, args) for row in rows])
-                results = predict_intervals(model, samples, rows, args.device, thresholds)
-            for row, (decisions, count) in zip(rows, results, strict=True):
-                sampled += count
-                predictions.append(Prediction(clip.patient, row.targets, decisions, clip.device,
-                                              row.mode or clip.mode, clip.site))
-    sites = {clip.site for clip in clips.values() if assignments.get(clip.patient) in {"train", "val"} and clip.site}
-    return {
-        "status": "scored", "source": "team", "cohort": args.labels.name, "model": model_info,
-        "split": {"patients": dict(sorted(Counter(assignments.values()).items())),
-                  "cross_split_patients": 0, "test_patients_evaluated": len({row.patient for row in predictions}),
-                  "test_clips_evaluated": len(selected), "test_segments_evaluated": len(predictions)},
-        "sampled_frames": sampled, "metrics": scoring_report(predictions, labels, quality_classes),
-        "strata": strata_report(predictions, labels, quality_classes, sites),
-    }
+        raise ValueError("工作簿含未锁定分组的已确认患儿")
+    with open_archive(args.media) as archive:
+        for key, rows in segments.items():
+            clip = clips[key]
+            if assignments[clip.patient] != args.split:
+                continue
+            with local_media(args.media, archive, clip.path, args.scratch) as media:
+                frames = selected_interval_frames(media, rows, [interval_bins(row, args) for row in rows])
+                predictions = inference.predict(frames, len(rows))
+            for row, prediction in zip(rows, predictions, strict=True):
+                yield clip.patient, key, clip.device, row.mode or clip.mode, clip.site, row.targets, prediction
 
 
-def stanford_partition(archive, args):
-    roles = {role: set(getattr(args, f"{role}_splits")) for role in ("train", "val", "test")}
-    role_by_fold = {fold: role for role, folds in roles.items() for fold in folds}
-    if len(role_by_fold) != sum(map(len, roles.values())):
-        raise ValueError("train、val 和 test 的原始 Split 不能重叠")
+def stanford_members(archive, split, checkpoint, *, clips_per_class=None):
+    required = {"train": list(TRAIN_SPLITS), "val": list(VAL_SPLITS), "test": list(TEST_SPLITS)}
+    if checkpoint.get("source_splits") != required:
+        raise ValueError("checkpoint 未记录 Stanford 第 0 次轮转的完整分组")
     errors = []
     clips = read_sources(archive, errors)
     if errors:
-        raise ValueError(json.dumps(errors, ensure_ascii=False))
-    patient_folds = {}
-    patients = defaultdict(set)
-    counts = defaultdict(Counter)
-    selected = []
-    for clip in clips:
-        path, view, fold, table, line = clip
-        match = STANFORD_FILENAME.fullmatch(PurePosixPath(path).name)
-        if match is None:
-            raise ValueError(f"{table} 第 {line} 行不符合发布方的 AVI 文件名格式")
-        patient = match[1]
-        expected = str(int(hashlib.sha1(patient.encode("utf-8")).hexdigest(), 16) % 10)
-        if fold != expected or patient_folds.get(patient, fold) != fold:
-            raise ValueError(f"{table} 第 {line} 行的原始 Split 与患儿分组不一致")
-        patient_folds[patient] = fold
-        role = role_by_fold.get(fold, "unused")
-        patients[role].add(patient)
-        counts[role][view] += 1
-        if role == "test":
-            selected.append((clip, patient))
-    if any(not counts[role] for role in roles):
-        raise ValueError("指定的 train、val 和 test 均须包含视频")
-    return selected, {
-        "source_folds": {role: sorted(folds) for role, folds in roles.items()},
-        "patients": {role: len(values) for role, values in sorted(patients.items())},
-        "clips_per_view": {role: dict(sorted(values.items())) for role, values in sorted(counts.items())},
-        "cross_split_patients": 0,
-    }
+        raise ValueError(f"Stanford 文件清单有 {len(errors)} 项错误")
+    verify_rotation(clips)
+    selected = [clip for clip in clips if clip[2] in required[split]]
+    if clips_per_class is not None:
+        if split != "val":
+            raise ValueError("校准抽样仅使用验证折")
+        rng = random.Random(42)
+        selected = [clip for view in VIEWS
+                    for clip in rng.sample([clip for clip in selected if clip[1] == view], clips_per_class)]
+    return [(published_patient(path), path, VIEWS.index(view)) for path, view, _, _, _ in selected]
 
 
-def stanford_evaluation(args):
+def stanford_samples(args, checkpoint, *, clips_per_class=None):
     with ZipFile(args.archive, metadata_encoding="utf-8") as archive:
-        selected, partition = stanford_partition(archive, args)
-        report = {"status": "audit", "source": "stanford", "split": partition}
-        if not args.audit_only:
-            labels = {"view": {code: {"name": code} for code in VIEWS}}
-            roles = partition["source_folds"]
-            thresholds = (args.view_threshold,)
-            model, model_info = load_checkpoint(
-                args, labels, {"source_splits": {key: roles[key] for key in ("train", "val")}},
-                lambda: ViewModel(weights=None), thresholds,
-            )
-            report.update(status="scored", model=model_info)
-        predicted, sampled, decoded = [], 0, 0
-        support, sampled_by_view = Counter(), Counter()
-        for clip, patient in selected:
-            item, error = inspect_avi(archive, clip, args)
-            if error:
-                raise ValueError(json.dumps(error, ensure_ascii=False))
-            _, row, frame_count, expected = item
-            path, view, _, _, _ = clip
-            if expected == 0:
-                raise ValueError(f"{path} 没有抽到真实帧")
-            decoded += frame_count
-            sampled += expected
-            support[view] += 1
-            sampled_by_view[view] += expected
-            if not args.audit_only:
-                with avi_frames(archive, path) as frames:
-                    timed = samples_in_intervals(frames, [row], [interval_bins(row, args)])
-                    (decisions, actual), = predict_intervals(model, timed, [row], args.device, thresholds)
-                if actual != expected:
-                    raise ValueError(f"{path} 的抽帧数量与预检不一致")
-                predicted.append(Prediction(patient, row.targets, decisions))
-        report.update(decoded_frames=decoded, sampled_frames=sampled, sampled_frames_per_view=dict(sampled_by_view),
-                      test_clips_checked=len(selected), reference_support=dict(support))
-        if not args.audit_only:
-            report["metrics"] = scoring_report(predicted, labels)
-        return report
+        for patient, path, target in stanford_members(archive, args.split, checkpoint, clips_per_class=clips_per_class):
+            frames = whole_video_samples(lambda path=path: open_avi(archive, path), args)
+            yield patient, path, (target,), frames
 
 
-def main():
-    parser = argparse.ArgumentParser(description="使用固定分组独立评估心超 checkpoint")
-    sub = parser.add_subparsers(dest="source", required=True)
-    team = sub.add_parser("team")
-    team.add_argument("--media", type=Path, required=True)
-    team.add_argument("--labels", type=Path, required=True)
-    team.add_argument("--quality-threshold", type=float, required=True)
-    team.add_argument("--acceptable-quality", required=True)
-    team.add_argument("--low-quality", nargs="+", required=True)
-    stanford = sub.add_parser("stanford")
-    stanford.add_argument("--archive", type=Path, required=True)
-    for role in ("train", "val", "test"):
-        stanford.add_argument(f"--{role}-splits", choices=SOURCE_SPLITS, nargs="+", required=True)
-    stanford.add_argument("--audit-only", action="store_true")
-    stanford.add_argument("--stanford-authorization-confirmed", action="store_true")
-    for mode in (team, stanford):
-        mode.add_argument("--report", type=Path, required=True)
-        mode.add_argument("--checkpoint", type=Path, required=mode is team)
-        mode.add_argument("--view-threshold", type=float, required=mode is team)
-        mode.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
-        mode.add_argument("--sample-fps", type=float, default=10)
-        mode.add_argument("--max-frames-per-segment", type=int, default=8)
-    args = parser.parse_args()
-    if args.source == "stanford" and not args.audit_only:
-        if not args.stanford_authorization_confirmed or args.checkpoint is None or args.view_threshold is None:
-            parser.error("Stanford 正式评估需要已确认授权、--checkpoint 和 --view-threshold")
-    for value in (args.view_threshold, getattr(args, "quality_threshold", None)):
-        if value is not None and not 0 <= value <= 1:
-            parser.error("置信阈值必须在 [0, 1] 内")
-    if not math.isfinite(args.sample_fps) or args.sample_fps <= 0 or args.max_frames_per_segment <= 0:
-        parser.error("抽帧率和帧数上限必须为正")
-    if args.report.suffix.lower() != ".json" or args.report.exists():
-        parser.error("--report 需要指向新的 JSON 文件")
+def stanford_rows(args, checkpoint, inference):
+    for patient, path, targets, frames in stanford_samples(args, checkpoint):
+        prediction, = inference.predict(frames, 1)
+        yield patient, path, "", "灰阶", "", targets, prediction
+
+
+def evaluate(args):
+    model, checkpoint, labels, digest = checkpoint_model(args.checkpoint, args.device)
+    args.sample_fps = checkpoint["sampling"]["sample_fps"]
+    args.max_frames_per_segment = checkpoint["sampling"]["max_frames_per_segment"]
+    policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
+    if args.split == "test" and (policy.get("checkpoint_sha256") != digest or policy.get("validated_on") != "val"):
+        raise ValueError("独立测试需要同一 checkpoint 的验证集冻结文件")
+    policy = locked_policy(policy, labels)
+    inference = IntervalInference(model, args.device, labels, policy)
+    args.scratch.mkdir(parents=True, exist_ok=True)
+    team = args.archive is None
+    if team != ("quality" in labels):
+        raise ValueError("数据类型与 checkpoint 模型类型不一致")
+    rows = list(team_rows(args, checkpoint, labels, inference) if team else stanford_rows(args, checkpoint, inference))
+    if not rows:
+        raise ValueError(f"{args.split} 没有实际评估区间")
+
+    def metrics(selected):
+        return {task: summarize([(row[5][i], row[6][i], row[0]) for row in selected if row[5][i] != IGNORE], codes,
+                                [codes.index(code) for code in policy["usable_quality"]] if task == "quality" else None,
+                                [codes.index(code) for code in policy["low_quality"]] if task == "quality" else None)
+                for i, (task, codes) in enumerate(labels.items())}
+
+    groups = {"device": defaultdict(list), "mode": defaultdict(list), "site": defaultdict(list)}
+    for row in rows:
+        for key, value in zip(groups, row[2:5], strict=True):
+            groups[key][value or "未填写"].append(row)
+    report = {"dataset": "team" if team else "EchoNet-Pediatric grey-scale", "split": args.split,
+              "checkpoint_sha256": digest, "preprocessing": PREPROCESSING, "sampling": checkpoint["sampling"],
+              "aggregation": "mean_frame_softmax", **policy, "patients": len({row[0] for row in rows}),
+              "clips": len({row[1] for row in rows}), "intervals": len(rows), "metrics": metrics(rows),
+              "groups": {key: {value: metrics(group) for value, group in observed.items()}
+                         for key, observed in groups.items()} if team else {}}
+    if args.lock:
+        if any(not sum(task["support"]) for task in report["metrics"].values()):
+            raise ValueError("每个输出头都需要实际验证区间才能冻结阈值")
+        if team and report["metrics"]["quality"]["quality"]["low_quality_false_pass"]["value"] is None:
+            raise ValueError("冻结质量阈值前需要已确认的低质量验证区间")
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    if args.device == "cpu":
-        torch.set_num_threads(1)
-    report = team_evaluation(args) if args.source == "team" else stanford_evaluation(args)
-    report["sampling"] = sampling_config(args)
-    if report["status"] == "scored":
-        report["confidence_intervals"] = {"method": "patient_cluster_percentile_bootstrap",
-                                          "repeats": BOOTSTRAP_REPEATS, "seed": BOOTSTRAP_SEED}
-    with args.report.open("x", encoding="utf-8") as file:
-        json.dump(report, file, ensure_ascii=False, indent=2, allow_nan=False)
-        file.write("\n")
-    print(f"{report['status']}：{args.report}")
+    with args.report.open("x", encoding="utf-8") as output:
+        json.dump(report, output, ensure_ascii=False, indent=2, allow_nan=False)
+    if args.lock:
+        with args.report.open("rb") as source:
+            validation_digest = hashlib.file_digest(source, "sha256").hexdigest()
+        with args.lock.open("x", encoding="utf-8") as output:
+            json.dump({**policy, "checkpoint_sha256": digest, "validated_on": "val",
+                       "validation_report_sha256": validation_digest}, output, indent=2)
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] in {"team", "stanford"}:
+        return evaluate_patient_heldout.main(argv)
+    parser = argparse.ArgumentParser(description="按固定分组评估心超 checkpoint，不在测试集调整阈值")
+    parser.epilog = "原有 team、stanford 子命令继续提供按患儿独立评估及只读核查。"
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--media", type=Path)
+    inputs.add_argument("--archive", type=Path)
+    parser.add_argument("--labels", type=Path)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--policy", type=Path, required=True)
+    parser.add_argument("--split", choices=("val", "test"), required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--lock", type=Path)
+    parser.add_argument("--scratch", type=Path, required=True)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
+    args = parser.parse_args(argv)
+    if bool(args.labels) != bool(args.media) or (args.lock and args.split != "val"):
+        parser.error("团队影像需要 --labels，且只能在验证阶段写冻结文件")
+    evaluate(args)
 
 
 if __name__ == "__main__":

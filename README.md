@@ -15,6 +15,8 @@ RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质�
 
 电脑端支持从二维多帧 DICOM cine、AVI、MP4 或 MOV 读取原始时间戳和抽帧。FFmpeg 将图像等比例缩放并填充为 `224×224` RGB。训练入口先做数据预检，报告通过后初始化 CUDA 并开始微调。
 
+[Stanford 切面推理入口](docs/MODEL_EVALUATION.md#电脑端视频推理与全链路复测)使用 TensorRT FP16 和 CUDA Graph 对本地 AVI、MP4 或 MOV 输出整段切面判定、平均类别概率和抽样帧数。
+
 ## 环境要求
 
 | 项目 | 已验证配置和用途 |
@@ -78,7 +80,9 @@ $config = @(
 & $python -X utf8 .\train_echo.py train @config
 ```
 
-默认前两轮只训练两个分类头，之后解冻骨干最后三个特征模块。训练完成写出 `best.pt` 和 `metrics.json`。验证报告包含各任务的 Macro-F1、支持数和混淆矩阵。Macro-F1 按该分组中实际出现的类别计算，解读时应同时检查类别支持数。`test` 分组由预检核对，当前训练入口只训练和评估 `train`、`val`。
+默认前两轮只训练两个分类头，之后解冻骨干最后三个特征模块。训练帧按每名患儿的已抽取帧数倒数加权，保持各患儿在抽样中的总权重相同。训练输出 `best.pt`、`config.json` 和 `metrics.json`，记录标签顺序、患儿划分、训练参数、每轮耗时和峰值显存。训练日志中的验证指标按帧计算。锁定模型和阈值后的片段级评估与导出见 [独立评估与 ONNX 核对](docs/MODEL_EVALUATION.md)。
+
+按患儿评估及 Stanford 分折只读核查的 `team` 和 `stanford` 子命令见 [心超模型独立评估](docs/EVALUATION.md)。
 
 ## 单独验证影像和测速
 

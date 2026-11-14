@@ -1,6 +1,6 @@
 # 心超模型独立评估
 
-从仓库根目录运行 `evaluate_echo.py`。使用训练生成的 `best.pt`，并保持类别顺序、抽帧参数及患儿划分与训练一致。`$python` 指向 [README 中配置的 Python](../README.md#环境要求)。评估复用现有的 DICOM／视频解码、时间分箱、等比缩放和 RGB 归一化，以 FP32 推理。CPU 为默认设备，RTX 5060 可用 `--device cuda`。报告写入新的 JSON 文件。
+从仓库根目录运行 `evaluate_echo.py` 的 `team` 或 `stanford` 子命令。使用训练生成的 `best.pt`，并保持类别顺序、抽帧参数及患儿划分与训练一致。`$python` 指向 [README 中配置的 Python](../README.md#环境要求)。评估复用现有的 DICOM／视频解码、时间分箱、等比缩放和 RGB 归一化，以 FP32 推理。CPU 为默认设备，RTX 5060 可用 `--device cuda`。报告写入新的 JSON 文件。电脑端 FP16 使用先逐帧 softmax 再求平均的锁定策略，复测命令见 [电脑端视频推理与全链路复测](MODEL_EVALUATION.md#电脑端视频推理与全链路复测)。
 
 ## 团队双头模型
 
@@ -25,7 +25,7 @@
   --audit-only --report '.\work\stanford-audit.json'
 ```
 
-正式评分使用相同的分组参数，将 `--audit-only` 换成 `--stanford-authorization-confirmed --checkpoint $checkpoint --view-threshold $viewThreshold`，另指定新的报告路径。训练与验证折必须和 checkpoint 一致。
+正式评分使用相同的分组参数，将 `--audit-only` 换成 `--stanford-authorization-confirmed --checkpoint $checkpoint --view-threshold $viewThreshold`，另指定新的报告路径。训练与验证折必须和 checkpoint 一致。记录测试折的 checkpoint 同时核对测试折。
 
 ## 报告读法
 
@@ -40,4 +40,4 @@
 
 公开彩色 DICOM 通过真实时间抽帧、RGB 归一化和官方 ImageNet 权重前向检查。公开样本的工程工作簿被正式评估入口判定为缺少有效标签。训练预检也识别出另一个工程工作簿里的患儿分组冲突。
 
-团队正式评分等待对应 checkpoint 和确认后的测试标注。Stanford 正式评分等待对应 checkpoint 和使用确认。
+团队正式评分等待对应 checkpoint 和确认后的测试标注。
