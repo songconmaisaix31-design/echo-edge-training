@@ -87,6 +87,12 @@ $video = '.\data\sample.avi'
 
 成功时输出一条 JSON，`precision` 为 `fp16`，`view` 为 `A4C` 或 `PSAX`，另有 `sampled_frames` 和两类平均概率 `probabilities`。
 
+## Stanford 左室分割模型
+
+EchoNet-Pediatric 左室心内膜腔单帧分割模型，训练、独立测试和单帧预测入口都在 `train_stanford_lv.py`。接口约定、接口测试记录、训练配置和独立测试评分见 [Stanford 左室分割模型的接口与独立测试](docs/STANFORD_LV_MODEL.md)。
+
+锁定独立测试折（原始折 0，186 名患儿、658 段视频、1,298 个有描迹帧）的帧级 Dice 为 0.9047、IoU 为 0.8323；按患儿平均的 Dice 为 0.9074、IoU 为 0.8362（A4C 0.8938 / 0.8147，PSAX 0.9151 / 0.8482）。权重、验证曲线、独立测试报告和接口测试记录通过 [stanford-lv-epoch8](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-lv-epoch8) 提供。
+
 ## 数据交付
 
 请把 [Excel 标注模板](templates/儿童心超标注模板.xlsx) 和 [训练数据交付要求](docs/TRAINING_DATA.md) 发给团队。首批优先收集拟部署设备上的完整去标识儿童经胸心超检查，包含灰阶、彩色多普勒、低质量画面、过渡和补扫。由儿科心超专家先确认切面和采集质量标签定义，再交付源影像和已复核的 Excel。
