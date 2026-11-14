@@ -1,6 +1,17 @@
-# 儿童心超模型与采集终端
+# Echo Edge 儿童心超研究工作站
 
-RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质量模型的训练和推理。ESP32-S3 负责外设采集、OLED 显示、语音和振动提示，以及台架上的舵机控制。终端接线、开发顺序和实机验收见 [ESP32-S3 终端方案与任务](docs/ESP32_TERMINAL.md)。
+Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研究模型，通过 USB 串口与 ESP32-S3 终端通信。在网页创建检查、导入视频后，可运行 Stanford 切面识别，或选定一帧已确认属于 A4C 的影像运行 CardiacUDC 四腔分割。网页从后端读取分析记录与叠图，检查创建者或管理员可以发送提示并查看终端接收回执。
+
+**部署入口**：[Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)。该文档包含安装依赖、下载发布权重、迁移数据库、创建账号、启动服务和实机验收的命令。默认网页为 `http://127.0.0.1:5181/`，API 为 `http://127.0.0.1:8019/`。
+
+| 四端 | 当前部署 |
+| --- | --- |
+| 网页 | `frontend/`，通过本机 HTTP 访问 API，提供检查、阅片、四腔叠图和终端回执 |
+| API | `backend/`，处理权限、媒体原件、SQLite 分析记录及串口通信 |
+| 模型 | [Stanford 切面研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10) 与 [CardiacUDC 四腔分割研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1) |
+| 终端 | ESP32-S3 运行 EdgeTerminal，经 USB 串口接收 `HINT` 并返回 `ACK` |
+
+已实测公开教学视频的导入、推理、结果保存、刷新回读和终端命令接收。当前流程由操作者发起分析和发送提示。[#12 正式采集反馈验收](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12) 仍需冻结双头模型、三类真实视频和连续联动记录。终端接线和硬件进度见 [ESP32-S3 终端方案与任务](docs/ESP32_TERMINAL.md)。
 
 终端固件源码、构建与烧录命令见 [firmware/](firmware/README.md)；排查记录与踩过的坑见 [docs/firmware/pitfalls.md](docs/firmware/pitfalls.md)，硬件关键事实（引脚禁区、I²C 地址、ECW 寄存器）见 [docs/firmware/hardware-facts.md](docs/firmware/hardware-facts.md)。厂商参赛套件的模块定义收在 [reference/moce-kit/](reference/README.md)。
 
@@ -165,6 +176,6 @@ New-Item -ItemType Directory -Force .\work | Out-Null
 
 ## 验证边界和公开内容
 
-已在 RTX 5060 上验证 CUDA 运算、真实视频解码与抽帧、常规 DICOM cine 的灰阶与彩色读取、双头前向和预检拦截。团队设备的二维彩色多普勒、变帧间隔样本、正式标注和训练结果仍需在实际数据上验证。该仓库提供研究训练与工程验证代码，尚无临床准确率和目标终端部署结果。
+已在 RTX 5060 上验证 CUDA 运算、真实视频解码与抽帧、常规 DICOM cine 的灰阶与彩色读取、双头前向和预检拦截。团队设备的二维彩色多普勒、变帧间隔样本、正式标注和训练结果仍需在实际数据上验证。现有模型与终端回执的验证记录见 [Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)，临床准确率仍待评估。
 
 Git 版本库跟踪代码、依赖版本、空白模板和说明文档。获准共享的 Stanford 权重、推理引擎和汇总测试报告通过本私有仓库的 Release 提供。原始影像、填好的标注、患者关联表、其他私有报告和抽帧缓存应留在授权环境。`data/`、`work/` 和 `runs/` 已加入 Git 忽略规则。上传其他文件前检查 `git status`，尤其留意无扩展名的 DICOM 文件。

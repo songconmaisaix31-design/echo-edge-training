@@ -1,8 +1,10 @@
 # 心超模型独立评估
 
-从仓库根目录运行 `evaluate_echo.py` 的 `team` 或 `stanford` 子命令。使用训练生成的 `best.pt`，并保持类别顺序、抽帧参数及患儿划分与训练一致。`$python` 指向 [README 中配置的 Python](../README.md#环境要求)。评估复用现有的 DICOM／视频解码、时间分箱、等比缩放和 RGB 归一化，以 FP32 推理。CPU 为默认设备，RTX 5060 可用 `--device cuda`。报告写入新的 JSON 文件。电脑端 FP16 使用先逐帧 softmax 再求平均的锁定策略，复测命令见 [电脑端视频推理与全链路复测](MODEL_EVALUATION.md#电脑端视频推理与全链路复测)。
+验收报告使用 `evaluate_echo.py --split val --lock` 冻结阈值，再用 `--split test` 加载冻结文件。该流程按帧计算 softmax 概率并取平均，与 ONNX 核对采用同一聚合方式。命令见[独立评估与 ONNX 核对](MODEL_EVALUATION.md)。
 
-## 团队双头模型
+以下 `team` 和 `stanford` 子命令用于复查既有报告和只读核对分折。`$python` 指向 [README 中配置的 Python](../README.md#环境要求)。这两个子命令使用同一套 DICOM／视频解码、时间分箱、等比缩放和 RGB 归一化，以 FP32 推理。CPU 为默认设备，RTX 5060 可用 `--device cuda`。
+
+## 复查团队双头模型的既有报告
 
 使用训练时的完整标注工作簿。视频清单按患儿明确指定 `train`、`val`、`test`，同一患儿的其他视频可以继承该分组。命令只读取测试组中带已确认区间的影像。验证集确定阈值，`$viewThreshold`、`$qualityThreshold` 填锁定后的数值。将 `$acceptableCode` 和 `$lowQualityCodes` 填为临床确认的质量类别代码。
 
@@ -25,9 +27,9 @@
   --audit-only --report '.\work\stanford-audit.json'
 ```
 
-正式评分使用相同的分组参数，将 `--audit-only` 换成 `--stanford-authorization-confirmed --checkpoint $checkpoint --view-threshold $viewThreshold`，另指定新的报告路径。训练与验证折必须和 checkpoint 一致。记录测试折的 checkpoint 同时核对测试折。
+复查使用该子命令生成的既有评分时，先确认书面授权，再将 `--audit-only` 换成 `--stanford-authorization-confirmed --checkpoint $checkpoint --view-threshold $viewThreshold`，另指定新的报告路径。训练与验证折必须和 checkpoint 一致。记录测试折的 checkpoint 同时核对测试折。
 
-## 报告读法
+## 既有子命令报告的读法
 
 - 每个已确认区间或 Stanford 视频先对选中帧的 logits 求平均，再做 softmax。低于该任务固定阈值时拒判。混淆矩阵列末尾的 `null` 表示拒判，召回的分母包含拒判。
 - 各任务只统计自身有确认标签的片段。覆盖率是给出类别的片段比例。低质量误放行率的分母为标为指定低质量类别的片段，分子为其中被预测为可用的片段。

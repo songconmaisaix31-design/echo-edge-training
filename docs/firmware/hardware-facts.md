@@ -12,7 +12,7 @@
 | 原生 USB 口 | `COM5`（`303A`），本项目不用 |
 | 串口日志 | UART0，115200 8N1 |
 | FQBN | `esp32:esp32:esp32s3:FlashMode=dio,FlashSize=16M,CDCOnBoot=default,PSRAM=disabled,PartitionScheme=default` |
-| 工具链 | 仓库自带 `tools/bin/arduino-cli.exe` + `tools/arduino-cli.yaml` |
+| 工具链 | Arduino CLI 1.6.0 与 Arduino-ESP32 3.3.12，见[固件构建命令](../../firmware/README.md#编译与烧录) |
 
 ### 引脚禁区（踩过就知道疼）
 
