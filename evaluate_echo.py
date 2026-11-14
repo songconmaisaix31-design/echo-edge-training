@@ -136,6 +136,7 @@ def summarize(rows, codes, usable=None, low=None):
     for row in rows:
         groups[row[2]].append(row)
     patients = list(groups.values())
+    low_quality_patients = len({patient for truth, _, patient in rows if truth in low})
     rng = random.Random(42)
     samples = defaultdict(list)
     for _ in range(1000 if len(patients) >= 2 else 0):
@@ -143,9 +144,14 @@ def summarize(rows, codes, usable=None, low=None):
         for name, value in quality_metrics(confusion(selected, len(codes)), usable, low).items():
             if value is not None:
                 samples[name].append(value)
-    result["quality"] = {name: {"value": value, "patient_bootstrap_95": (
-        [quantiles(samples[name], n=40, method="inclusive")[i] for i in (0, 38)] if len(samples[name]) >= 2 else None
-    )} for name, value in quality_metrics(matrix, usable, low).items()}
+    result["quality"] = {}
+    for name, value in quality_metrics(matrix, usable, low).items():
+        eligible_patients = low_quality_patients if name == "low_quality_false_pass" else len(patients)
+        interval = None
+        if eligible_patients >= 2 and len(samples[name]) >= 2:
+            bounds = quantiles(samples[name], n=40, method="inclusive")
+            interval = [bounds[0], bounds[38]]
+        result["quality"][name] = {"value": value, "patient_bootstrap_95": interval}
     return result
 
 
