@@ -15,7 +15,7 @@ RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质�
 
 电脑端支持从二维多帧 DICOM cine、AVI、MP4 或 MOV 读取原始时间戳和抽帧。FFmpeg 将图像等比例缩放并填充为 `224×224` RGB。训练入口先做数据预检，报告通过后初始化 CUDA 并开始微调。
 
-[Stanford 切面推理入口](docs/MODEL_EVALUATION.md#电脑端视频推理与全链路复测)使用 TensorRT FP16 对本地 AVI、MP4 或 MOV 输出整段切面判定、平均类别概率和抽样帧数。
+[Stanford 切面推理入口](docs/MODEL_EVALUATION.md#电脑端视频推理与全链路复测)使用 TensorRT FP16 和 CUDA Graph 对本地 AVI、MP4 或 MOV 输出整段切面判定、平均类别概率和抽样帧数。
 
 ## 环境要求
 

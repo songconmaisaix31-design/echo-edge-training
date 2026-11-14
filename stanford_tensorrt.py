@@ -70,6 +70,8 @@ class TensorRTForward:
         if not formats or uses_half != fp16:
             raise RuntimeError(f"引擎内部张量精度与构建配置不符 {self.formats}")
         self.context.nvtx_verbosity = trt.ProfilingVerbosity.NONE
+        self.profile_start = torch.cuda.Event(enable_timing=True)
+        self.profile_end = torch.cuda.Event(enable_timing=True)
 
     def bind(self, name, shape, mode):
         if (tuple(self.engine.get_tensor_shape(name)) != shape
@@ -109,6 +111,24 @@ class TensorRTForward:
             download = perf_counter() - download_started
         return scores, uploaded - started, inference, download
 
+    def profile_submission(self, image):
+        with torch.cuda.stream(self.stream):
+            self.input.copy_(image)
+            self.profile_start.record(self.stream)
+            started = perf_counter()
+            self.enqueue()
+            submitted = perf_counter()
+            self.profile_end.record(self.stream)
+            waiting = perf_counter()
+            scores = self.output[0].cpu()
+            completed = perf_counter()
+            gpu = self.profile_start.elapsed_time(self.profile_end) / 1000
+        return scores, {
+            "host_enqueue": submitted - started,
+            "blocking_readback": completed - waiting,
+            "gpu_interval": gpu,
+        }
+
     def run(self, image):
         self.input.copy_(image)
         self.start.record(self.stream)
@@ -117,6 +137,43 @@ class TensorRTForward:
         self.end.synchronize()
         elapsed = self.start.elapsed_time(self.end) / 1000
         return self.output[0].cpu(), elapsed
+
+
+class TensorRTGraph:
+    def __init__(self, forward, max_frames):
+        self.forward = forward
+        self.host_inputs = torch.empty((max_frames, *forward.input.shape), dtype=forward.input.dtype, pin_memory=True)
+        self.host_outputs = torch.empty((max_frames, forward.output.shape[1]), dtype=forward.output.dtype,
+                                        pin_memory=True)
+        self.graph = None
+
+    def capture(self):
+        forward = self.forward
+        forward.input.copy_(self.host_inputs[0], non_blocking=True)
+        forward.enqueue()
+        forward.stream.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=forward.stream):
+            forward.enqueue()
+        self.graph = graph
+
+    def predict_clip(self, images):
+        count = 0
+        for image in images:
+            self.host_inputs[count].copy_(image)
+            count += 1
+        if not count:
+            raise ValueError("视频没有抽到可用帧")
+        forward = self.forward
+        with torch.cuda.stream(forward.stream):
+            if self.graph is None:
+                self.capture()
+            for index in range(count):
+                forward.input.copy_(self.host_inputs[index], non_blocking=True)
+                self.graph.replay()
+                self.host_outputs[index].copy_(forward.output[0], non_blocking=True)
+            forward.stream.synchronize()
+        return self.host_outputs[:count]
 
 
 @torch.inference_mode()

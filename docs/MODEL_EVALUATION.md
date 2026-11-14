@@ -64,7 +64,7 @@ $edge = @('--archive', $archive, '--checkpoint', $checkpoint, '--policy', $locke
 
 ## 电脑端视频推理与全链路复测
 
-使用上一步导出的 TensorRT 测试报告，将报告和对应的引擎文件放在同一目录。电脑端默认加载 FP16 引擎，校验引擎 SHA-256，并用报告中的预处理、时间抽样和锁定阈值判定整段视频。输入为本地 AVI、MP4 或 MOV，标准输出为单条 JSON。传 `--precision fp32` 可指定 FP32。
+使用上一步导出的 TensorRT 测试报告，将报告和对应的引擎文件放在同一目录。电脑端默认加载 FP16 引擎和 CUDA Graph，校验引擎 SHA-256，并用报告中的预处理、时间抽样和锁定阈值判定整段视频。输入为本地 AVI、MP4 或 MOV，标准输出为单条 JSON。传 `--precision fp32` 可指定 FP32。
 
 ```powershell
 $engineReport = '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-test.json'
@@ -85,3 +85,14 @@ $test = @('--archive', $archive, '--engine-report', $engineReport)
 ```
 
 `profile` 报告每段的解码和抽帧、预处理、输入上传、GPU 推理和输出回传耗时。GPU 推理使用 CUDA Events，传输边界显式同步。使用 `benchmark-decode` 比较同一个 FP16 引擎处理同一视频的两种方式，该入口用普通推理路径计时，并在计时区间外逐帧核对 PTS 和归一化输入。两遍解码保留用于复核。
+
+### CUDA Graph 复测
+
+```powershell
+& $python -X utf8 .\infer_stanford.py profile-submission @test --report '.\work\stanford-fp16-submission.json'
+& $python -X utf8 .\infer_stanford.py benchmark-graph @test --report '.\work\stanford-fp16-cuda-graph.json'
+```
+
+`profile-submission` 测量逐帧调用 `execute_async_v3` 的 CPU 时间、阻塞回传时间和 CUDA Events 记录的 GPU 时间。阻塞回传包含排队中的 GPU 工作。GPU 时间可能与 CPU 提交及回传等待重叠。
+
+FP16 路径在固定的 CUDA 流和 TensorRT 执行上下文捕获 batch 1 推理图。每段视频使用可复用的锁页缓冲区，在同一条流上依抽样顺序上传、重放推理图并回传，在片段结束时同步一次，再按原顺序在 CPU 聚合概率。首次推理包含捕获成本。`benchmark-graph` 在验证视频预热时完成捕获，再交替测量两条路径。核对逐帧原始输出在计时区间外执行。 [NVIDIA TensorRT CUDA Graph 指南](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/optimization.html#cuda-graphs)
