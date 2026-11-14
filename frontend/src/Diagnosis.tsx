@@ -2,11 +2,12 @@ import {useEffect,useState} from 'react'
 import {api,Player,ViewAnalysis} from './Modules'
 import {Button} from './button'
 import {diagnosisHref} from './diagnosis-contract'
+import StructureEvidence from './StructureEvidence'
 import './Diagnosis.css'
 
 type Exam = {id:number;patient_id:number;snapshot:{name:string};kind:string;status:string;parameters?:{exam_date?:string|null}}
 type Case = {id:number;media:string[]}
-type Capabilities = {model:string;modelDetail?:string}
+type Capabilities = {model:string;modelDetail?:string;structureConfigured?:boolean;terminalConfigured?:boolean}
 type ExamMedia = {examId:number;ids:string[]}
 const sections = ['AI 诊断结果','诊断证据','鉴别与复核','医生审核'] as const
 const states:Record<string,string> = {draft:'草稿',submitted:'待审核',reviewed:'已审核'}
@@ -101,10 +102,12 @@ export default function Diagnosis({route}:{route:string}){
        <p>对当前选中的影像进行切面分类。此结果不用于判断是否患病。</p>
        {active?<ViewAnalysis key={active} id={active} available={viewReady} detail={capError?'无法读取模型状态。':cap?(viewReady?cap.modelDetail||'Stanford 切面模型可用。':'切面模型未接入。'):'正在读取模型状态…'}/>:<p>选择关联影像后可执行切面识别。</p>}
       </article>
-     </>:section==='诊断证据'?<article className="diagnosis-card">
+     </>:section==='诊断证据'?<>
+     {active&&<StructureEvidence key={active} id={active} configured={!!cap?.structureConfigured} terminal={!!cap?.terminalConfigured}/>}
+     <article className="diagnosis-card">
       <h2>诊断证据</h2><p>尚无模型返回的异常征象或证据帧。可在阅片区播放或逐帧查看当前影像。</p>
       <dl className="exam-overview"><div><dt>异常征象与关键帧</dt><dd>暂无记录</dd></div><div><dt>支持证据</dt><dd>暂无记录</dd></div><div><dt>缺失或矛盾证据</dt><dd>尚未评估</dd></div></dl>
-     </article>:section==='鉴别与复核'?<article className="diagnosis-card">
+     </article></>:section==='鉴别与复核'?<article className="diagnosis-card">
       <h2>鉴别诊断与复核提示</h2><p>尚未接入经过临床审核的知识规则。当前不生成鉴别诊断或医学复核建议。</p>
      </article>:<article className="diagnosis-card">
       <h2>医生审核</h2><p id="diagnosis-review-status">诊断审核接口未接入。初步诊断、复核意见及审核操作目前不可保存。</p>

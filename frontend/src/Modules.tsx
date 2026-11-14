@@ -26,6 +26,7 @@ type TerminalReceipt = {hint:string;sequence:number;ack_ms:number}
 
 type AnalysisJob = {
  id:number
+ model_type:string
  state:'pending'|'running'|'succeeded'|'failed'|'interrupted'
  model_version:string
  output:ViewPrediction|null
@@ -60,7 +61,7 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
    if(current)setTerminalConfigured(capabilities.terminalConfigured)
   }).catch(()=>{if(current)setTerminalConfigured(false)})
   api<AnalysisJob[]>('/media/'+id+'/analysis-jobs').then(rows=>{
-   if(current)setHistory(rows)
+   if(current)setHistory(rows.filter(job=>job.model_type==='stanford_view'))
   }).catch(e=>{if(current)setHistoryError(e.message)})
   api<Media>('/media/'+id).then(media=>{
    if(current)setInput({id,status:media.modelInputs?.stanford_view ?? {status:'unknown',detail:'影像推理条件未提供。'}})

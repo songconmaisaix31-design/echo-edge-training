@@ -22,11 +22,10 @@ def wait_for(port, pattern):
     raise HTTPException(504, "终端未在规定时间内回执，请先确认设备状态")
 
 
-def send_view(view):
+def send_hint(hint):
     port_name = os.environ.get("ECHO_TERMINAL_PORT")
     if not port_name:
         raise HTTPException(503, "未配置 ESP32-S3 串口")
-    hint = HINTS[view]
     if not TERMINAL_LOCK.acquire(blocking=False):
         raise HTTPException(503, "正在向终端发送另一条提示")
     try:

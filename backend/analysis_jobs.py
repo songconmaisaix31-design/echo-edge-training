@@ -5,8 +5,13 @@ import logging
 import os
 import json
 from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
+from threading import BoundedSemaphore
 
 from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select, update
 
 import model_inference
@@ -34,15 +39,28 @@ class AnalysisJob(db.Base):
 
 
 RUNNER_MARKER = "[active local runner]"
+CARDIACUDC_SHA256 = "6e821f6768a57214d61e25602d024316b032d1f4511a7886d7f133ec2cf95f4f"
+STRUCTURE_MODEL = "cardiacudc_fourchamber"
+STRUCTURE_SLOT = BoundedSemaphore(1)
+
+
+class StructureInput(BaseModel):
+    frame_index: int = Field(ge=0, strict=True)
+
+
+def structure_configuration():
+    paths = [Path(os.environ.get(name, "")) for name in ("ECHO_STRUCTURE_PYTHON", "ECHO_CARDIACUDC_CHECKPOINT")]
+    return paths if all(path.is_absolute() and path.is_file() for path in paths) else None
 
 
 def serialize(job):
+    output = json.loads(job.output) if job.output else None
     return {
         "id": job.id, "exam_id": job.exam_id, "media_id": job.media_id,
         "model_type": job.model_type, "model_version": job.model_version,
         "input_sha256": job.input_sha256, "state": job.state, "error": None if job.error == RUNNER_MARKER else job.error,
-        "output": json.loads(job.output) if job.output else None,
-        "evidence_frames": [],
+        "output": output,
+        "evidence_frames": [output["frame"]] if output and job.model_type == STRUCTURE_MODEL else [],
         "created": job.created.isoformat() + "Z",
         "completed": job.completed.isoformat() + "Z" if job.completed else None,
         "actor": job.actor,
@@ -89,12 +107,23 @@ def run(identifier, folder, user, legacy=False):
     adapter = ModelAdapter("view_classification", version,
                            lambda item: ModelOutput(model_inference.predict(item.source.parent)))
     model_input = ModelInput(case.id, identifier, video, fingerprint)
+    result, failure = execute_job(model_input, user, "stanford_view", adapter.version,
+                                  lambda _job_id: adapter.execute(model_input).payload)
+    if legacy:
+        if failure:
+            raise failure
+        if result["state"] != "succeeded":
+            raise HTTPException(409, "分析任务已中断")
+        return result["output"]
+    return result
 
+
+def execute_job(model_input, user, model_type, version, execute):
     # Synchronous execution keeps the existing request contract.
     with db.Session() as session:
         job = AnalysisJob(
-            exam_id=case.id, media_id=identifier, model_type="stanford_view",
-            model_version=adapter.version, input_sha256=model_input.sha256, state="running",
+            exam_id=model_input.exam_id, media_id=model_input.media_id, model_type=model_type,
+            model_version=version, input_sha256=model_input.sha256, state="running",
             created=db.now(), actor=user.id, error=RUNNER_MARKER,
         )
         session.add(job)
@@ -105,7 +134,7 @@ def run(identifier, folder, user, legacy=False):
 
     output, failure = None, None
     try:
-        output = json.dumps(adapter.execute(model_input).payload, allow_nan=False)
+        output = json.dumps(execute(job_id), allow_nan=False)
     except HTTPException as exc:
         failure = exc
     except Exception:
@@ -119,13 +148,50 @@ def run(identifier, folder, user, legacy=False):
                  error=str(failure.detail) if failure else None, completed=db.now()))
         job = session.get(AnalysisJob, job_id)
         result = serialize(job)
-    if legacy:
-        if failure:
-            raise failure
-        if result["state"] != "succeeded":
-            raise HTTPException(409, "分析任务已中断")
-        return result["output"]
-    return result
+    return result, failure
+
+
+def run_structure(identifier, folder, index, user):
+    with db.Session() as session:
+        media = session.get(db.Media, identifier)
+        if media is None:
+            raise HTTPException(404, "影像不存在")
+        case = db.get_case(session, media.case_id, user)
+        if session.get(Examination, case.id) is None:
+            raise HTTPException(409, "影像尚未关联正式检查")
+    config = structure_configuration()
+    if config is None:
+        raise HTTPException(503, "四腔分割模型未配置")
+    python, checkpoint = config
+    if sha256(checkpoint) != CARDIACUDC_SHA256:
+        raise HTTPException(503, "四腔分割权重与 CardiacUDC 发布版不一致")
+    video = next((path for path in folder.glob("source.*") if path.is_file()), None)
+    metadata = folder / "metadata.json"
+    if video is None or not metadata.is_file():
+        raise HTTPException(422, "缺少已导入的视频原件或帧索引")
+    frames = json.loads(metadata.read_text(encoding="utf-8"))["frames"]
+    if index >= len(frames):
+        raise HTTPException(422, "所选帧超出视频范围")
+    model_input = ModelInput(case.id, identifier, video, sha256(video))
+
+    def segment(job_id):
+        runner = Path(__file__).with_name("cardiacudc_frame.py")
+        with TemporaryDirectory(prefix=".structure-", dir=folder) as scratch:
+            image = Path(scratch) / "overlay.png"
+            command = [str(python), "-X", "utf8", str(runner), "--checkpoint", str(checkpoint),
+                       "--video", str(video.resolve()), "--frame", str(index), "--output", str(image)]
+            try:
+                process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
+                                         check=True, timeout=60)
+            except subprocess.TimeoutExpired as error:
+                raise HTTPException(504, "四腔分割超时") from error
+            output = json.loads(process.stdout)
+            image.replace(folder / f"structure-{job_id}.png")
+        return {**output, "frame": {"media_id": identifier, "frame_index": index,
+                                     "timestamp_ms": frames[index]["offsetMs"]}}
+
+    version = "cardiacudc:" + CARDIACUDC_SHA256
+    return execute_job(model_input, user, STRUCTURE_MODEL, version, segment)[0]
 
 
 @contextmanager
@@ -168,6 +234,15 @@ def register(app, media_folder):
     def submit(identifier: str, user=Depends(db.current)):
         return run(identifier, media_folder(identifier), user)
 
+    @app.post("/api/v1/media/{identifier}/structure-jobs", status_code=201)
+    def submit_structure(identifier: str, body: StructureInput, user=Depends(db.current)):
+        if not STRUCTURE_SLOT.acquire(blocking=False):
+            raise HTTPException(503, "另一个四腔分割任务正在运行")
+        try:
+            return run_structure(identifier, media_folder(identifier), body.frame_index, user)
+        finally:
+            STRUCTURE_SLOT.release()
+
     @app.get("/api/v1/analysis-jobs/{key}")
     def status(key: int, user=Depends(db.current)):
         with db.Session() as session:
@@ -176,6 +251,18 @@ def register(app, media_folder):
                 raise HTTPException(404, "分析任务不存在")
             db.get_case(session, job.exam_id, user)
             return serialize(job)
+
+    @app.get("/api/v1/analysis-jobs/{key}/overlay")
+    def structure_overlay(key: int, user=Depends(db.current)):
+        with db.Session() as session:
+            job = session.get(AnalysisJob, key)
+            if job is None or job.model_type != STRUCTURE_MODEL or job.state != "succeeded":
+                raise HTTPException(404, "结构叠图不存在")
+            db.get_case(session, job.exam_id, user)
+            image = media_folder(job.media_id) / f"structure-{key}.png"
+        if not image.is_file():
+            raise HTTPException(404, "结构叠图文件不存在")
+        return FileResponse(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/v1/analysis-jobs/{key}/terminal")
     def send_terminal(key: int, user=Depends(db.current)):
@@ -186,13 +273,20 @@ def register(app, media_folder):
             case = db.get_case(session, job.exam_id, user)
             if user.role != "admin" and case.owner != user.id:
                 raise HTTPException(403, "只有检查创建者或管理员可发送终端提示")
-            if job.state != "succeeded" or job.model_type != "stanford_view" or not job.output:
-                raise HTTPException(409, "只有成功的切面分析可发送到终端")
-            output = json.loads(job.output)
-            if "view" not in output or output["view"] not in ("A4C", "PSAX", None):
-                raise HTTPException(409, "该任务没有有效的切面结果")
-            view = output["view"]
-        return terminal_link.send_view(view)
+            if job.state != "succeeded" or not job.output:
+                raise HTTPException(409, "只有成功的分析可发送到终端")
+            if job.model_type == STRUCTURE_MODEL:
+                if not (media_folder(job.media_id) / f"structure-{key}.png").is_file():
+                    raise HTTPException(409, "四腔结构叠图文件不存在")
+                hint = "MASK READY"
+            elif job.model_type == "stanford_view":
+                output = json.loads(job.output)
+                if "view" not in output or output["view"] not in ("A4C", "PSAX", None):
+                    raise HTTPException(409, "该任务没有有效的切面结果")
+                hint = terminal_link.HINTS[output["view"]]
+            else:
+                raise HTTPException(409, "当前分析类型不可发送到终端")
+        return terminal_link.send_hint(hint)
 
     @app.get("/api/v1/examinations/{key}/analysis-jobs")
     def exam_history(key: int, user=Depends(db.current)):

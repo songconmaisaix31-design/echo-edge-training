@@ -15,6 +15,8 @@ PR #13 和 #14 以同一提交 `3fcdc64` 为头。工作站在包含 EdgeTermina
 | `ECHO_INFERENCE_SCRIPT` | `infer_stanford.py` 绝对路径 |
 | `ECHO_ENGINE_REPORT` | 发布报告的绝对路径 |
 | `ECHO_STANFORD_CHECKPOINT` | CPU FP32 模式使用发布 checkpoint。使用 TensorRT FP16 时清除该变量。 |
+| `ECHO_STRUCTURE_PYTHON` | 装好 PyTorch、PyAV、NumPy 和 Pillow 的 `python.exe` 绝对路径 |
+| `ECHO_CARDIACUDC_CHECKPOINT` | `cardiacudc-fourchamber-v1` 的第 18 轮权重绝对路径 |
 | `ECHO_TERMINAL_PORT` | 装有 EdgeTerminal 的串口，例如 `COM4` |
 
 首次启动先在 `backend/` 执行 `& $env:ECHO_API_PYTHON -m alembic upgrade head` 和 `& $env:ECHO_API_PYTHON create_user.py operator operator`，设置账号密码。回到根目录运行 `./Start-EchoEdge.ps1`。默认 Web 与 API 只监听本机。串口由后端打开，使用前退出占用该串口的调试工具。
@@ -26,3 +28,9 @@ PR #13 和 #14 以同一提交 `3fcdc64` 为头。工作站在包含 EdgeTermina
 2026 年 11 月 15 日在 D 盘隔离环境使用本机 Chromium、Vite HTTP 代理、FastAPI、SQLite、已发布的 Stanford CPU FP32 权重和实际 `COM4` 测试。导入 53 帧公开教学视频，模型抽样 8 帧，任务成功且刷新后读回。终端返回 `ACK,22`，命令到回执耗时 23.066 ms。未登录发送请求返回 HTTP 401。公开样例 S3 的论文标注为 A4C，本次模型输出 PSAX。该结果用于核对链路与误分实例。[公开样例来源](https://pocusjournal.com/article/2021-06-01p10-12/)
 
 团队双头模型处于训练阶段。#12 正式验收仍需冻结的双头模型、三类真实视频及完整联动记录。本次终端遥测带有 `MOCK` 标记，实测范围为指令和串口回执。
+
+## 四腔结构分割
+
+在「AI 辅助诊断 → 诊断证据」选择已确认属于 A4C 的视频帧。`POST /api/v1/media/{id}/structure-jobs` 接收从 0 开始的源帧序号，校验 Release 权重的 SHA-256，以 256 × 256 灰度输入运行四腔 U-Net。结果保存源帧和时间戳、权重摘要及结构叠图。`GET /api/v1/analysis-jobs/{id}/overlay` 按检查访问权限返回叠图。检查创建者或管理员可以发送 `HINT MASK READY`，网页将在核对实际 `ACK` 后显示回执。
+
+用上面的公开教学视频首帧复测。第 18 轮模型生成 9,330 个前景掩膜像素，网页成功加载叠图，刷新后读回叠图及原有切面结果。未登录读取叠图返回 401，越界帧返回 422。`COM4` 返回 `ACK,25`，命令到回执 25.050 ms。该结果用于验证数据流和设备指令。CardiacUDC 的发布范围为非商业研究，成人／混合队列的输出在儿童场景需要单独验证。[CardiacUDC Release](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1)
