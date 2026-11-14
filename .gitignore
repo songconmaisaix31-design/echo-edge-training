@@ -40,3 +40,51 @@ DICOMDIR
 # 固件导出的采样样本要入库（默认规则忽略 *.log）
 !/docs/firmware/samples/*.log
 !/docs/firmware/samples/*.json
+
+# Local databases, including SQLite transaction sidecars
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.sqlitedb
+
+# Runtime media, backups and service state (at any depth)
+platform-media/
+uploads/
+backups/
+local-services/
+*.analysis.lock
+*.webm
+*.m4v
+*.mpeg
+*.mpg
+*.wmv
+*.mxf
+
+# Nested dependency directories, caches and generated builds
+node_modules/
+.venv/
+venv/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+*.tsbuildinfo
+
+# Local acceptance screenshots: not cleared for publication
+/exam-detail-test.png
+/patient-detail-test.png
+/patient-list-test.png
+
+# Keep frontend dependency/configuration manifests eligible for version control
+!/frontend/package.json
+!/frontend/package-lock.json
+!/frontend/tsconfig*.json

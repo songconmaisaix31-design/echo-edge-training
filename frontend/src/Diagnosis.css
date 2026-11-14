@@ -1,0 +1,30 @@
+.diagnosis .diagnosis-heading{margin-bottom:20px}
+.diagnosis-header-actions,.diagnosis-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px}
+.diagnosis-header-actions{justify-content:flex-end}
+.diagnosis .diagnosis-context{margin-bottom:16px}
+.diagnosis .diagnosis-toolbar .context-bar{margin:0;max-width:100%}
+.diagnosis select{max-width:100%}
+.diagnosis .context-bar label{min-width:0}
+.diagnosis-facts{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;margin:14px 0 0}
+.diagnosis-facts div{min-width:0;background:#f5f9fd;border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+.diagnosis-facts dt{color:#5d748a;font-size:12px}
+.diagnosis-facts dd{font-weight:650;margin:3px 0 0;overflow-wrap:anywhere}
+.diagnosis-layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:16px;align-items:start}
+.diagnosis .diagnosis-viewer{color:#d8e6f3;background:#141d29;border-color:#304254}
+.diagnosis-viewer p,.diagnosis-viewer label{color:#bdcddd}
+.diagnosis-viewer select{color:#24364b;background:white}
+.diagnosis-viewer .cine-image{height:clamp(320px,49vh,540px);min-height:0;margin-top:12px;border-radius:8px;overflow:hidden}
+.diagnosis-viewer .cine-image img{height:100%;min-height:0;max-height:min(49vh,540px);object-fit:contain}
+.diagnosis-viewer-empty{padding:32px 0;text-align:center}
+.diagnosis-tablist{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#f7fafd;border-bottom:1px solid var(--border)}
+.diagnosis-tablist button{min-width:0;min-height:48px;padding:6px;border-bottom:2px solid transparent;color:#51677d;font-size:13px;cursor:pointer}
+.diagnosis-tablist button:hover{background:#edf5fd}
+.diagnosis-tablist button[aria-selected=true]{color:#0869bd;border-color:var(--brand);background:white;font-weight:650}
+.diagnosis-tablist button:focus-visible,.diagnosis-panel:focus-visible{outline:2px solid var(--brand);outline-offset:-3px}
+.diagnosis-panel{display:grid;gap:12px;padding:14px}
+.diagnosis-card{min-width:0;border:1px solid var(--border);border-radius:10px;padding:14px;overflow-wrap:anywhere}
+.diagnosis-card p{color:#536b81;margin:8px 0}
+.diagnosis-card .exam-overview{grid-template-columns:1fr}
+@media(max-width:1050px){.diagnosis-layout{grid-template-columns:minmax(0,1fr)}.diagnosis-header-actions{justify-content:flex-start}}
+@media(max-width:750px){.diagnosis-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:430px){.diagnosis-tablist button{font-size:12px}.diagnosis-viewer .cine-image{height:270px}}
