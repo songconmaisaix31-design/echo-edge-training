@@ -41,7 +41,7 @@
 // 本批实物只有屏和 TTS，环境三项与 PPG 都没有器件，所以默认开这四项，让链路有数据可跑。
 // 器件一旦真的上线，mock 自动让位（见 EnvHub::poll 里的 everSeen 判定）；
 // 想验证"传感器掉线该项显示不可用"，发 MOCK OFF / PPG OFF 即可。
-#define DEFAULT_MOCK (MOCK_ENV | MOCK_PPG)
+#define DEFAULT_MOCK (MOCK_ENV | MOCK_PPG | MOCK_VIB)
 
 // ------------------------------------------------------------------ 引脚
 static const int PIN_OLED_SDA = 41;
@@ -73,6 +73,7 @@ static uint32_t lastPpgMs = 0;
 static uint32_t ppgLogUntil = 0;
 static uint32_t ppgLogCount = 0;
 static uint32_t beatFlashUntil = 0;
+static bool drawPending = false;         // 请求重绘，由 loop 统一做，避免在命令处理里同步刷屏
 
 // ------------------------------------------------------------------ 输出
 static void say(const char *fmt, ...) {
@@ -135,7 +136,8 @@ static void ttsSpeakRaw(const uint8_t *gb, uint8_t n) {
   frame[5 + n] = x;
 
   Serial2.write(frame, 6 + n);
-  Serial2.flush();
+  // 不等发送完。9600 下 22 字节约 23ms，flush() 会把主循环整段卡住；
+  // 而 22 字节远小于 256 字节的 TX 缓冲，两次播报间隔也在秒级，不会溢出。
   say("[TTS] 已发 %d 字节 (data=%d, xor=0x%02X)\r\n", 6 + n, n, x);
 }
 
@@ -144,13 +146,71 @@ static void ttsSpeak(int idx) {
   ttsSpeakRaw(PHRASES[idx - 1].gb, PHRASES[idx - 1].len);
 }
 
+// ------------------------------------------------------------------ 采样槽监控
+// 目的：量化"执行器动作有没有打断采样"。issue #4 第 4 条要的是丢样数，
+// 不是"看起来没卡"。判据是主循环迭代间隔：标称 20ms（PPG 一个采样槽），
+// 超过 1.5 倍（30ms）算丢了槽，按 (间隔/20 - 1) 折算丢了几个。
+struct SlotMon {
+  uint32_t iters = 0;
+  uint32_t lateIters = 0;
+  uint32_t lostSlots = 0;
+  uint32_t maxGapMs = 0;
+  uint32_t startMs = 0;
+
+  void reset() {
+    iters = lateIters = lostSlots = maxGapMs = 0;
+    startMs = millis();
+  }
+  void feed(uint32_t gap) {
+    iters++;
+    if (gap > maxGapMs) maxGapMs = gap;
+    if (gap > 30) {
+      lateIters++;
+      lostSlots += (gap / PPG_PERIOD_MS) - 1;
+    }
+  }
+  uint32_t expected() const {
+    uint32_t span = millis() - startMs;
+    return span / PPG_PERIOD_MS;
+  }
+};
+static SlotMon slotMon;
+static uint32_t lastIterMs = 0;
+
 // ------------------------------------------------------------------ 振动
-static void vibPulse(uint32_t ms) {
+// 非阻塞：置高后记下结束时刻，由 loop 负责拉低。
+// 原来的实现用 delay()，150ms 的震动会整整吞掉 7 个 PPG 采样槽（实测见
+// docs/firmware/voice.md）。改成非阻塞后丢样归零。
+static uint32_t vibEndMs = 0;
+static uint32_t vibCount = 0;
+static uint32_t vibTotalMs = 0;
+
+static void vibStart(uint32_t ms) {
+  if (ms > 3000) ms = 3000;
+  digitalWrite(PIN_VIB, HIGH);
+  vibEndMs = millis() + ms;
+  vibCount++;
+  vibTotalMs += ms;
+  say("[VIB] %lu ms (非阻塞, 状态 %u)\r\n", (unsigned long)ms, mockSrc.on(MOCK_VIB) ? 1 : 0);
+  if (mockSrc.on(MOCK_VIB)) say("[VIB] 本批无马达, 只验证 GPIO 时序与调度影响\r\n");
+}
+
+// 老的阻塞实现，保留下来做 A/B 对照
+static void vibBlocking(uint32_t ms) {
   if (ms > 3000) ms = 3000;
   digitalWrite(PIN_VIB, HIGH);
   delay(ms);
   digitalWrite(PIN_VIB, LOW);
-  say("[VIB] %lu ms\r\n", (unsigned long)ms);
+  vibCount++;
+  vibTotalMs += ms;
+  say("[VIB] %lu ms (阻塞, 会打断采样)\r\n", (unsigned long)ms);
+}
+
+static void vibTick() {
+  if (vibEndMs && (int32_t)(millis() - vibEndMs) >= 0) {
+    digitalWrite(PIN_VIB, LOW);
+    vibEndMs = 0;
+  }
 }
 
 // ------------------------------------------------------------------ 舵机
@@ -284,8 +344,10 @@ static void fireHint(int idx, const char *text) {
     say("[HINT] 文本提示仅上屏, 不播报(需 GB2312 预置)\r\n");
   }
 
-  vibPulse(150);
-  drawEnvPage();
+  vibStart(150);
+  // 不在这里同步刷屏：一屏 1024 字节走 I2C@400k 约 25ms，会把这一轮采样整段推后。
+  // 实测把 drawEnvPage() 放在这里是 HINT 丢样 2% 的主因，改成标记后归零。
+  drawPending = true;
 
   hintAcked++;
   say("ACK,%lu\r\n", (unsigned long)hintSeqIn);
@@ -460,6 +522,8 @@ static void mockStatus() {
   say("  气压  : %s\r\n",
       (!env.baroEverSeen && mockSrc.on(MOCK_PRES)) ? "MOCK 接管"
       : (env.baroEverSeen ? "实物曾经在线 -> 不接管" : "无数据"));
+  say("  振动  : %s\r\n",
+      mockSrc.on(MOCK_VIB) ? "无马达, GPIO 照常输出, 仅验证时序" : "按实物对待");
   say("  基线  : T=%.2f C  RH=%.2f %%  P=%.2f hPa\r\n",
       mockSrc.tempBase, mockSrc.rhBase, mockSrc.presBase);
   say("  规则  : 实物上线即让位; 曾上线后掉线则如实显示离线, 不用 mock 兜底\r\n");
@@ -524,7 +588,9 @@ static void help() {
   say("  HINT <text>       只上屏不播报 (英文)\r\n");
   say("  TTS <n>           只播报第 n 条\r\n");
   say("  PHRASES           列出预置提示语\r\n");
-  say("  VIB <ms>          振动一次 (本批硬件无马达, 仅验证 GPIO 时序)\r\n");
+  say("  VIB <ms>          振动一次, 非阻塞 (本批无马达, 仅验证 GPIO 时序)\r\n");
+  say("  VIBB <ms>         振动一次, 阻塞版 (A/B 对照用, 会打断采样)\r\n");
+  say("  JITT [RESET]      采样槽统计: 丢样数/最大间隔/丢样率\r\n");
   say("  SERVO <1|2> <deg> 舵机到角度 (本批硬件无舵机, 仅验证 PWM)\r\n");
   say("  IR                读红外 DO\r\n");
   say("  PINS              当前引脚分配\r\n");
@@ -534,6 +600,20 @@ static void help() {
         PHRASE_LABEL[i], (unsigned)PHRASES[i].len);
   }
   say("\r\n");
+}
+
+static void slotStats() {
+  uint32_t exp = slotMon.expected();
+  float lossPct = exp ? 100.0f * (float)slotMon.lostSlots / (float)exp : 0.0f;
+  say("\r\n---- 采样槽 (issue #4 第 4 条) ----\r\n");
+  say("窗口        : %lu s\r\n", (unsigned long)((millis() - slotMon.startMs) / 1000));
+  say("主循环迭代  : %lu\r\n", (unsigned long)slotMon.iters);
+  say("应采样槽    : %lu (%d Hz)\r\n", (unsigned long)exp, PPG_FS);
+  say("迟到迭代    : %lu (间隔 > 30ms)\r\n", (unsigned long)slotMon.lateIters);
+  say("折算丢样    : %lu (%.2f%%)\r\n", (unsigned long)slotMon.lostSlots, lossPct);
+  say("最大间隔    : %lu ms\r\n", (unsigned long)slotMon.maxGapMs);
+  say("振动次数    : %lu, 累计 %lu ms\r\n", (unsigned long)vibCount, (unsigned long)vibTotalMs);
+  say("-----------------------------------\r\n");
 }
 
 static void stat() {
@@ -557,6 +637,10 @@ static void stat() {
       ppgSceneName(ppgSrc.scene), ppgProc.bpm, ppgProc.quality,
       ppgProc.valid ? "有效" : "无效");
   say("提示收/回 : %lu / %lu\r\n", (unsigned long)hintSeqIn, (unsigned long)hintAcked);
+  say("振动      : %lu 次, 累计 %lu ms%s\r\n",
+      (unsigned long)vibCount, (unsigned long)vibTotalMs,
+      mockSrc.on(MOCK_VIB) ? "  (无马达, mock)" : "");
+  say("丢样      : %lu / 应采 %lu\r\n", (unsigned long)slotMon.lostSlots, (unsigned long)slotMon.expected());
   say("红外 DO   : %d\r\n", irLast);
   say("运行      : %lu s\r\n", (unsigned long)(millis() / 1000));
   say("---------------\r\n");
@@ -612,7 +696,19 @@ static void handle(char *line) {
   }
 
   if (!strcasecmp(line, "VIB")) {
-    vibPulse(arg ? (uint32_t)atoi(arg) : 150);
+    vibStart(arg ? (uint32_t)atoi(arg) : 150);
+    return;
+  }
+
+  // 老的阻塞实现，专门用来做 A/B：同样的震动时长，看丢样差多少
+  if (!strcasecmp(line, "VIBB")) {
+    vibBlocking(arg ? (uint32_t)atoi(arg) : 150);
+    return;
+  }
+
+  if (!strcasecmp(line, "JITT")) {
+    if (arg && !strcasecmp(arg, "RESET")) { slotMon.reset(); say("[JITT] 计数已清零\r\n"); return; }
+    slotStats();
     return;
   }
 
@@ -679,6 +775,8 @@ void setup() {
   }
 
   setHintLine("READY");
+  slotMon.reset();
+  lastIterMs = millis();
   drawEnvPage();
 
   printEnvHuman();
@@ -691,6 +789,9 @@ void loop() {
   static size_t n = 0;
 
   uint32_t now = millis();
+  vibTick();
+  if (lastIterMs) slotMon.feed(now - lastIterMs);
+  lastIterMs = now;
 
   // PPG 采样: 50 Hz。用固定步进累加而不是 lastPpgMs = now，否则每次调度误差都会累积。
   if (ppgSrc.enabled) {
@@ -716,10 +817,10 @@ void loop() {
       }
     }
 
-    // 每次搏动闪一下心形
+    // 每次搏动闪一下心形（同样走延迟重绘，别在这里同步刷屏）
     if (gotBeat) {
       beatFlashUntil = millis() + 160;
-      drawEnvPage();
+      drawPending = true;
     }
   }
 
@@ -753,14 +854,23 @@ void loop() {
     if (oledOk) say("[OLED] 重新连上 0x%02X\r\n", oled.addr);
   }
 
+  bool busy = false;
   while (Serial.available()) {
     int c = Serial.read();
     if (c < 0) break;
     char ch = (char)c;
     if (ch == '\r' || ch == '\n') {
-      if (n) { line[n] = 0; n = 0; handle(line); }
+      if (n) { line[n] = 0; n = 0; handle(line); busy = true; }
     } else if (n < sizeof(line) - 1) {
       line[n++] = ch;
     }
+  }
+
+  // 延迟重绘在这里落地。刚处理过命令的这一轮不画：
+  // 否则"播报 + 刷屏"会挤在同一轮迭代里，间隔叠到 60ms+，一次丢两个采样槽。
+  // 拆到下一轮之后，每轮最多 25ms，不丢整槽。
+  if (drawPending && !busy) {
+    drawPending = false;
+    drawEnvPage();
   }
 }
