@@ -162,6 +162,9 @@ class TensorRTGraph:
         for image in images:
             self.host_inputs[count].copy_(image)
             count += 1
+        return self.replay_clip(count)
+
+    def replay_clip(self, count):
         if not count:
             raise ValueError("视频没有抽到可用帧")
         forward = self.forward

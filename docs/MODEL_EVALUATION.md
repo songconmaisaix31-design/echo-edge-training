@@ -96,3 +96,14 @@ $test = @('--archive', $archive, '--engine-report', $engineReport)
 `profile-submission` 测量逐帧调用 `execute_async_v3` 的 CPU 时间、阻塞回传时间和 CUDA Events 记录的 GPU 时间。阻塞回传包含排队中的 GPU 工作。GPU 时间可能与 CPU 提交及回传等待重叠。
 
 FP16 路径在固定的 CUDA 流和 TensorRT 执行上下文捕获 batch 1 推理图。每段视频使用可复用的锁页缓冲区，在同一条流上依抽样顺序上传、重放推理图并回传，在片段结束时同步一次，再按原顺序在 CPU 聚合概率。首次推理包含捕获成本。`benchmark-graph` 在验证视频预热时完成捕获，再交替测量两条路径。核对逐帧原始输出在计时区间外执行。 [NVIDIA TensorRT CUDA Graph 指南](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/optimization.html#cuda-graphs)
+
+### FP16 预处理
+
+```powershell
+& $python -X utf8 .\infer_stanford.py profile-preprocess @test --report '.\work\stanford-fp16-preprocess-stages.json'
+& $python -X utf8 .\infer_stanford.py benchmark-preprocess @test --report '.\work\stanford-fp16-preprocess-comparison.json'
+```
+
+`profile-preprocess` 在原有 CUDA Graph 路径拆测 FFmpeg 缩放与 RGB 转换、Pillow 补边、归一化和主机拷贝，报告逐帧和逐片段累计耗时。主机拷贝包含 PyAV 到 Pillow、Pillow 到张量和写入锁页缓冲区。GPU 上传保留在全链路计时内。
+
+默认 FP16 路径沿用原 FFmpeg 缩放，按 RGB24 原始行跨度读像素。用原归一化公式生成每个颜色通道的查找表，直接将浮点值写入 CUDA Graph 已有的锁页输入槽，尺寸变化时重置补边。运行 `benchmark-preprocess` 时，两条路径均单遍解码并使用同一个 FP16 引擎和 CUDA Graph，按片段交替执行。计时结束后核对抽样帧的完整输入张量、原始模型输出及片段概率。

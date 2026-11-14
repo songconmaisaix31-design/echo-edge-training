@@ -9,11 +9,13 @@ from types import SimpleNamespace
 from zipfile import ZipFile
 
 import av
+import numpy as np
 import torch
 import tensorrt as trt
 from av.video.reformatter import VideoReformatter
 
-from benchmark_echo import latency_summary, preprocess
+from benchmark_echo import (IMAGE_SIZE, image_pixels, latency_summary, normalize_pixels, pad_rgb_image, preprocess,
+                            resize_rgb_frame, scaled_size)
 from evaluate_echo import PREPROCESSING, decision, locked_policy, stanford_members, summarize
 from stanford_tensorrt import TensorRTForward, TensorRTGraph
 from train_echo import VIDEO_SUFFIXES, WEIGHTS, whole_video_samples
@@ -23,6 +25,7 @@ from train_echonet_views import VIEWS
 WARMUP_CLIPS = 5
 PROFILE_STAGES = ("decode_and_sample", "preprocess", "upload", "inference", "download")
 SUBMISSION_STAGES = ("host_enqueue", "blocking_readback", "gpu_interval")
+PREPROCESS_STAGES = ("resize", "pad", "normalize", "host_copy")
 
 
 def timed_samples(frames, timings):
@@ -36,13 +39,40 @@ def timed_samples(frames, timings):
         yield item
 
 
+class PinnedPreprocess:
+    def __init__(self, graph, normalization):
+        levels = torch.arange(256, dtype=torch.uint8).expand(3, 1, 256)
+        self.lookup = normalize_pixels(levels, normalization)[:, 0, :].numpy()
+        self.black = self.lookup[:, :1, None]
+        self.slots = graph.host_inputs[:, 0].numpy()
+        self.sizes = [None] * len(self.slots)
+        self.reformatter = VideoReformatter()
+
+    def write(self, frame, index):
+        width, height = size = scaled_size(frame)
+        rgb_frame = resize_rgb_frame(frame, self.reformatter, size)
+        plane = rgb_frame.planes[0]
+        stride = plane.line_size
+        rgb = np.ndarray((height, width, 3), dtype=np.uint8, buffer=plane,
+                         offset=max(0, -stride) * (height - 1), strides=(stride, 3, 1))
+        left, top = (IMAGE_SIZE - width) // 2, (IMAGE_SIZE - height) // 2
+        slot = self.slots[index]
+        if self.sizes[index] != size:
+            slot[:] = self.black
+            self.sizes[index] = size
+        for channel in range(3):
+            np.take(self.lookup[channel], rgb[:, :, channel],
+                    out=slot[channel, top:top + height, left:left + width], mode="clip")
+
+
 class VideoInference:
-    def __init__(self, forward, metadata, *, use_graph=False):
+    def __init__(self, forward, metadata, *, use_graph=False, fused_preprocess=False):
         self.forward = forward
         self.normalization = WEIGHTS.transforms()
         self.cutoff = locked_policy(metadata["policy"], {"view": VIEWS})["min_confidence"]["view"]
         self.sampling = SimpleNamespace(**metadata["sampling"])
         self.graph = TensorRTGraph(forward, self.sampling.max_frames_per_segment) if use_graph else None
+        self.fused_preprocess = PinnedPreprocess(self.graph, self.normalization) if fused_preprocess else None
 
     def images(self, open_video, decode_passes, timings):
         reformatter = VideoReformatter()
@@ -72,6 +102,12 @@ class VideoInference:
             yield scores
 
     def logits(self, open_video, decode_passes=1, timings=None, submission_profile=None):
+        if self.fused_preprocess is not None:
+            count = 0
+            for _, frame in whole_video_samples(open_video, self.sampling, decode_passes=decode_passes):
+                self.fused_preprocess.write(frame, count)
+                count += 1
+            return self.graph.replay_clip(count)
         images = self.images(open_video, decode_passes, timings)
         if self.graph is not None:
             return self.graph.predict_clip(images)
@@ -79,9 +115,12 @@ class VideoInference:
 
     @torch.inference_mode()
     def classify(self, open_video, *, decode_passes=1, timings=None, submission_profile=None):
+        return self.decide_clip(self.logits(open_video, decode_passes, timings, submission_profile))
+
+    def decide_clip(self, logits):
         probabilities = torch.zeros(len(VIEWS))
         count = 0
-        for scores in self.logits(open_video, decode_passes, timings, submission_profile):
+        for scores in logits:
             if not torch.isfinite(scores).all():
                 raise ValueError("TensorRT 输出含非有限值")
             probabilities += scores.softmax(dim=0)
@@ -109,7 +148,7 @@ def load_metadata(path):
     return metadata
 
 
-def load_inference(directory, metadata, precision, runtime, stream, *, use_graph=False):
+def load_inference(directory, metadata, precision, runtime, stream, *, use_graph=False, fused_preprocess=False):
     model = metadata["models"][precision]
     name = Path(model["file"])
     if name.name != model["file"] or name.suffix != ".engine":
@@ -117,7 +156,7 @@ def load_inference(directory, metadata, precision, runtime, stream, *, use_graph
     engine_path = directory / name
     forward = TensorRTForward(engine_path, runtime, stream, fp16=precision == "fp16",
                              expected_digest=model["sha256"])
-    return VideoInference(forward, metadata, use_graph=use_graph)
+    return VideoInference(forward, metadata, use_graph=use_graph, fused_preprocess=fused_preprocess)
 
 
 def write_report(path, report):
@@ -204,6 +243,68 @@ def profile_submission(args, metadata, model):
         "per_clip": {stage: latency_summary(values) for stage, values in clips.items()},
     })
     print(f"完成 {len(rows)} 段视频的逐帧提交测量", flush=True)
+
+
+@torch.inference_mode()
+def profile_preprocess(args, metadata, model):
+    per_frame = {stage: [] for stage in PREPROCESS_STAGES}
+    per_clip = {stage: [] for stage in PREPROCESS_STAGES}
+    rows = []
+    frames = 0
+    with ZipFile(args.archive, metadata_encoding="utf-8") as archive:
+        for _, path, _ in stanford_members(archive, "val", metadata)[:WARMUP_CLIPS]:
+            video = archive.read(path)
+            model.classify(lambda: av.open(io.BytesIO(video)))
+        for patient, path, truth in stanford_members(archive, "test", metadata):
+            video = archive.read(path)
+            reformatter = VideoReformatter()
+            measurements = {stage: [] for stage in PREPROCESS_STAGES}
+            count = 0
+            for _, frame in whole_video_samples(lambda: av.open(io.BytesIO(video)), model.sampling, decode_passes=1):
+                start = perf_counter()
+                resized = resize_rgb_frame(frame, reformatter, scaled_size(frame))
+                scaled = perf_counter()
+                rgb_image = resized.to_image()
+                materialized = perf_counter()
+                padded = pad_rgb_image(rgb_image)
+                padded_time = perf_counter()
+                pixels = image_pixels(padded)
+                converted = perf_counter()
+                image = normalize_pixels(pixels, model.normalization)
+                normalized = perf_counter()
+                model.graph.host_inputs[count, 0].copy_(image)
+                copied = perf_counter()
+                copies = (materialized - scaled) + (converted - padded_time) + (copied - normalized)
+                for stage, elapsed in zip(PREPROCESS_STAGES, (scaled - start, padded_time - materialized,
+                                           normalized - converted, copies),
+                                          strict=True):
+                    measurements[stage].append(elapsed)
+                count += 1
+            prediction = model.decide_clip(model.graph.replay_clip(count))
+            rows.append((truth, (*VIEWS, None).index(prediction["view"]), patient))
+            for stage, elapsed in measurements.items():
+                per_frame[stage].extend(elapsed)
+                per_clip[stage].append(sum(elapsed))
+            frames += count
+            if len(rows) % 100 == 0:
+                print(f"已拆测 {len(rows)} 段视频的预处理", flush=True)
+    if (len(rows) != metadata["clips"] or len({row[2] for row in rows}) != metadata["patients"]
+            or frames != metadata["frames"] or summarize(rows, VIEWS) != metadata["models"]["fp16"]["view"]):
+        raise ValueError("预处理拆测未复现已锁定的测试折")
+    write_report(args.report, {
+        "dataset": metadata["dataset"], "original_fold": "0", "clips": len(rows), "sampled_frames": frames,
+        "fp16_engine_sha256": model.forward.digest,
+        "runtime": {"gpu": torch.cuda.get_device_name(), "tensorrt": trt.__version__},
+        "timing_scope": {
+            "resize": "FFmpeg AREA resize and RGB conversion",
+            "pad": "Allocate and paste into a black Pillow canvas",
+            "normalize": "Float32 conversion, scaling and ImageNet normalization",
+            "host_copy": "Sum of PyAV-to-Pillow and Pillow-to-uint8 materialization, plus the pinned buffer copy",
+        },
+        "per_frame": {stage: latency_summary(values) for stage, values in per_frame.items()},
+        "per_clip": {stage: latency_summary(values) for stage, values in per_clip.items()},
+    })
+    print(f"完成 {len(rows)} 段、{frames} 帧的预处理拆测", flush=True)
 
 
 def benchmark(args, metadata, models):
@@ -345,15 +446,18 @@ def benchmark_decode(args, metadata, model):
 
 
 @torch.inference_mode()
-def benchmark_graph(args, metadata, models):
-    names = ("per_frame", "cuda_graph")
+def benchmark_fp16_paths(args, metadata, models):
+    names = tuple(models)
+    before_model, after_model = models.values()
+    compare_inputs = after_model.fused_preprocess is not None
     latencies = {name: [] for name in names}
     rows = []
     frames = 0
     identical_logits = 0
+    identical_inputs = 0
     digests = {model.forward.digest for model in models.values()}
     if len(digests) != 1:
-        raise ValueError("CUDA Graph 对照需要同一份 FP16 引擎")
+        raise ValueError("优化对照需要同一份 FP16 引擎")
     with ZipFile(args.archive, metadata_encoding="utf-8") as archive:
         val = stanford_members(archive, "val", metadata)
         test = stanford_members(archive, "test", metadata)
@@ -370,34 +474,43 @@ def benchmark_graph(args, metadata, models):
                 latencies[name].append(perf_counter() - started)
             before, after = (results[name] for name in names)
             if before != after:
-                raise ValueError("CUDA Graph 改变了片段判定、概率或抽样帧数")
+                raise ValueError("优化改变了片段判定、概率或抽样帧数")
             rows.append((truth, (*VIEWS, None).index(after["view"]), patient))
             frames += after["sampled_frames"]
             if len(rows) % 100 == 0:
                 print(f"已完成 {len(rows)} 段视频的全链路对照", flush=True)
-        print("开始逐帧核对原始模型输出", flush=True)
+        print("开始逐帧核对模型输入及原始输出" if compare_inputs else "开始逐帧核对原始模型输出",
+              flush=True)
         for _, path, _ in test:
             video = archive.read(path)
-            expected = models["per_frame"].logits(lambda: av.open(io.BytesIO(video)))
-            observed = models["cuda_graph"].logits(lambda: av.open(io.BytesIO(video)))
+            expected = before_model.logits(lambda: av.open(io.BytesIO(video)))
+            observed = after_model.logits(lambda: av.open(io.BytesIO(video)))
+            if compare_inputs:
+                count = len(observed)
+                if count != len(expected) or not torch.equal(before_model.graph.host_inputs[:count],
+                                                             after_model.graph.host_inputs[:count]):
+                    raise ValueError("合并预处理改变了抽样帧的归一化输入")
+                identical_inputs += count
             for left, right in zip(expected, observed, strict=True):
                 if not torch.equal(left, right):
-                    raise ValueError("CUDA Graph 改变了逐帧原始模型输出")
+                    raise ValueError("优化改变了逐帧原始模型输出")
                 identical_logits += 1
     patients = len({row[2] for row in rows})
     view = summarize(rows, VIEWS)
     if (len(rows) != metadata["clips"] or patients != metadata["patients"] or frames != metadata["frames"]
-            or identical_logits != frames or view != metadata["models"]["fp16"]["view"]):
-        raise ValueError("CUDA Graph 对照未复现已锁定的测试折")
+            or identical_logits != frames or (compare_inputs and identical_inputs != frames)
+            or view != metadata["models"]["fp16"]["view"]):
+        raise ValueError("优化对照未复现已锁定的测试折")
     write_report(args.report, {
         "dataset": metadata["dataset"], "original_fold": "0", "checkpoint_sha256": metadata["checkpoint_sha256"],
         "fp16_engine_sha256": next(iter(digests)), "clips": len(rows), "patients": patients, "sampled_frames": frames,
         "identical_frame_logits": identical_logits, "identical_clip_predictions_and_probabilities": len(rows),
+        **({"identical_sampled_frame_inputs": identical_inputs} if compare_inputs else {}),
         "view": view,
         "runtime": {"gpu": torch.cuda.get_device_name(), "tensorrt": trt.__version__, "decode_passes": 1,
                     "decoder_threads": 1, "warmup_validation_clips_per_path": WARMUP_CLIPS, "batch": 1,
                     "timing_scope": "Wall time from opening the encoded video in memory to final clip decision.",
-                    "excluded": ["ZIP reads", "engine loading", "graph capture", "warmup", "logit equivalence checks",
+                    "excluded": ["ZIP reads", "engine loading", "graph capture", "warmup", "equivalence checks",
                                  "report writing"]},
         "pipelines": {
             name: {"clip_latency": latency_summary(values), "total_measured_seconds": sum(values),
@@ -417,11 +530,14 @@ def main():
     submission = actions.add_parser("profile-submission")
     compare_decode = actions.add_parser("benchmark-decode")
     compare_graph = actions.add_parser("benchmark-graph")
-    for action in (predict, compare, profile, compare_decode, submission, compare_graph):
+    preprocess_profile = actions.add_parser("profile-preprocess")
+    compare_preprocess = actions.add_parser("benchmark-preprocess")
+    for action in (predict, compare, profile, compare_decode, submission, compare_graph,
+                   preprocess_profile, compare_preprocess):
         action.add_argument("--engine-report", type=Path, required=True)
     predict.add_argument("--video", type=Path, required=True)
     predict.add_argument("--precision", choices=("fp16", "fp32"), default="fp16")
-    for action in (compare, profile, compare_decode, submission, compare_graph):
+    for action in (compare, profile, compare_decode, submission, compare_graph, preprocess_profile, compare_preprocess):
         action.add_argument("--archive", type=Path, required=True)
         action.add_argument("--report", type=Path, required=True)
     profile.add_argument("--decode-passes", type=int, choices=(1, 2), default=1)
@@ -439,7 +555,9 @@ def main():
     stream = torch.cuda.Stream()
     directory = args.engine_report.parent
     if args.action == "predict":
-        model = load_inference(directory, metadata, args.precision, runtime, stream, use_graph=args.precision == "fp16")
+        fp16 = args.precision == "fp16"
+        model = load_inference(directory, metadata, args.precision, runtime, stream, use_graph=fp16,
+                               fused_preprocess=fp16)
         result = model.classify(lambda: av.open(str(args.video)))
         print(json.dumps({"precision": args.precision, **result}, ensure_ascii=False, allow_nan=False))
     elif args.action == "profile":
@@ -448,15 +566,24 @@ def main():
     elif args.action == "profile-submission":
         model = load_inference(directory, metadata, "fp16", runtime, stream)
         profile_submission(args, metadata, model)
+    elif args.action == "profile-preprocess":
+        model = load_inference(directory, metadata, "fp16", runtime, stream, use_graph=True)
+        profile_preprocess(args, metadata, model)
     elif args.action == "benchmark-decode":
         model = load_inference(directory, metadata, "fp16", runtime, stream)
         benchmark_decode(args, metadata, model)
     elif args.action == "benchmark-graph":
         models = {name: load_inference(directory, metadata, "fp16", runtime, stream, use_graph=name == "cuda_graph")
                   for name in ("per_frame", "cuda_graph")}
-        benchmark_graph(args, metadata, models)
+        benchmark_fp16_paths(args, metadata, models)
+    elif args.action == "benchmark-preprocess":
+        models = {name: load_inference(directory, metadata, "fp16", runtime, stream, use_graph=True,
+                                       fused_preprocess=fused)
+                  for name, fused in (("original", False), ("fused", True))}
+        benchmark_fp16_paths(args, metadata, models)
     else:
-        models = {name: load_inference(directory, metadata, name, runtime, stream, use_graph=name == "fp16")
+        models = {name: load_inference(directory, metadata, name, runtime, stream, use_graph=name == "fp16",
+                                       fused_preprocess=name == "fp16")
                   for name in ("fp32", "fp16")}
         benchmark(args, metadata, models)
 

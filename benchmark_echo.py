@@ -29,23 +29,41 @@ def configure_video(container):
     return stream
 
 
-def resize_and_pad(frame, reformatter=None):
+def scaled_size(frame):
     scale = IMAGE_SIZE / max(frame.width, frame.height)
-    size = tuple(max(1, round(side * scale)) for side in (frame.width, frame.height))
-    if reformatter is None:
-        resized = frame.to_image().resize(size, Image.Resampling.BILINEAR)
-    else:
-        resized = reformatter.reformat(
-            frame, width=size[0], height=size[1], format="rgb24", interpolation="AREA", threads=1,
-        ).to_image()
+    return tuple(max(1, round(side * scale)) for side in (frame.width, frame.height))
+
+
+def resize_rgb_frame(frame, reformatter, size):
+    return reformatter.reformat(frame, width=size[0], height=size[1], format="rgb24", interpolation="AREA", threads=1)
+
+
+def pad_rgb_image(resized):
     padded = Image.new("RGB", (IMAGE_SIZE, IMAGE_SIZE))
-    padded.paste(resized, tuple((IMAGE_SIZE - side) // 2 for side in size))
+    padded.paste(resized, tuple((IMAGE_SIZE - side) // 2 for side in resized.size))
     return padded
 
 
-def normalize_image(image, normalization):
-    tensor = transforms.pil_to_tensor(image).float().div_(255)
+def resize_and_pad(frame, reformatter=None):
+    size = scaled_size(frame)
+    if reformatter is None:
+        resized = frame.to_image().resize(size, Image.Resampling.BILINEAR)
+    else:
+        resized = resize_rgb_frame(frame, reformatter, size).to_image()
+    return pad_rgb_image(resized)
+
+
+def normalize_pixels(tensor, normalization):
+    tensor = tensor.float().div_(255)
     return transforms.normalize(tensor, normalization.mean, normalization.std)
+
+
+def image_pixels(image):
+    return transforms.pil_to_tensor(image)
+
+
+def normalize_image(image, normalization):
+    return normalize_pixels(image_pixels(image), normalization)
 
 
 def preprocess(frame, normalization, reformatter=None):
