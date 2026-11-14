@@ -197,3 +197,6 @@ analysis_jobs.register(app, media_folder)
 
 import research_reports
 research_reports.register(app)
+
+import panel
+panel.register(app)
