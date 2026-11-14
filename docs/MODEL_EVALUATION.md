@@ -64,7 +64,7 @@ $edge = @('--archive', $archive, '--checkpoint', $checkpoint, '--policy', $locke
 
 ## 电脑端视频推理与全链路复测
 
-使用上一步导出的 TensorRT 测试报告，将报告和对应的引擎文件放在同一目录。电脑端默认加载 FP16 引擎和 CUDA Graph，校验引擎 SHA-256，并用报告中的预处理、时间抽样和锁定阈值判定整段视频。输入为本地 AVI、MP4 或 MOV，标准输出为单条 JSON。传 `--precision fp32` 可指定 FP32。
+使用上一步导出的 TensorRT 测试报告，将报告和对应的引擎文件放在同一目录。电脑端默认加载 FP16 引擎和 CUDA Graph，校验引擎 SHA-256，并用报告中的预处理、时间抽样和锁定阈值判定整段视频。FP16 使用双缓冲交叠 CPU 预处理和 GPU 推理。输入为本地 AVI、MP4 或 MOV，标准输出为单条 JSON。传 `--precision fp32` 可指定 FP32。
 
 ```powershell
 $engineReport = '.\work\stanford-tensorrt\Stanford-TensorRT-FP32-FP16-test.json'
@@ -107,3 +107,15 @@ FP16 路径在固定的 CUDA 流和 TensorRT 执行上下文捕获 batch 1 推�
 `profile-preprocess` 在原有 CUDA Graph 路径拆测 FFmpeg 缩放与 RGB 转换、Pillow 补边、归一化和主机拷贝，报告逐帧和逐片段累计耗时。主机拷贝包含 PyAV 到 Pillow、Pillow 到张量和写入锁页缓冲区。GPU 上传保留在全链路计时内。
 
 默认 FP16 路径沿用原 FFmpeg 缩放，按 RGB24 原始行跨度读像素。用原归一化公式生成每个颜色通道的查找表，直接将浮点值写入 CUDA Graph 已有的锁页输入槽，尺寸变化时重置补边。运行 `benchmark-preprocess` 时，两条路径均单遍解码并使用同一个 FP16 引擎和 CUDA Graph，按片段交替执行。计时结束后核对抽样帧的完整输入张量、原始模型输出及片段概率。
+
+### CPU 和 GPU 双缓冲
+
+```powershell
+& $python -X utf8 .\infer_stanford.py profile-handoff @test --report '.\work\stanford-fp16-handoff-baseline.json'
+& $python -X utf8 .\infer_stanford.py profile-handoff @test --double-buffer --report '.\work\stanford-fp16-handoff-double-buffer.json'
+& $python -X utf8 .\infer_stanford.py benchmark-overlap @test --report '.\work\stanford-fp16-double-buffer-comparison.json'
+```
+
+CPU 在两个锁页输入槽之间交替写入。CUDA 流按帧排序上传、重放和回传。在同一输入槽写入下一帧之前，CPU 查询或等待该槽上一帧的上传事件。片段结束时同步并按原顺序聚合概率。 [NVIDIA CUDA 事件说明](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html)
+
+`profile-handoff` 分开记录 CPU 预处理、输入槽等待和片段末尾的阻塞等待时间。串行路径在所有帧预处理完成后才提交 GPU 工作，因此该路径的预处理时间也是 GPU 等待这批输入的时间。双缓冲报告统计下一帧开始预处理时上一帧的 GPU 回传事件尚未完成的次数。该计数含排队和复制。`benchmark-overlap` 交替测量同一 FP16 引擎的串行与双缓冲流程，额外的计时探针和逐帧等价检查在全链路计时区间外。

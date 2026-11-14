@@ -26,6 +26,7 @@ WARMUP_CLIPS = 5
 PROFILE_STAGES = ("decode_and_sample", "preprocess", "upload", "inference", "download")
 SUBMISSION_STAGES = ("host_enqueue", "blocking_readback", "gpu_interval")
 PREPROCESS_STAGES = ("resize", "pad", "normalize", "host_copy")
+HANDOFF_STAGES = ("cpu_preprocessing", "cpu_wait_input_slot", "cpu_wait_clip")
 
 
 def timed_samples(frames, timings):
@@ -66,13 +67,15 @@ class PinnedPreprocess:
 
 
 class VideoInference:
-    def __init__(self, forward, metadata, *, use_graph=False, fused_preprocess=False):
+    def __init__(self, forward, metadata, *, use_graph=False, fused_preprocess=False, double_buffer=False):
         self.forward = forward
         self.normalization = WEIGHTS.transforms()
         self.cutoff = locked_policy(metadata["policy"], {"view": VIEWS})["min_confidence"]["view"]
         self.sampling = SimpleNamespace(**metadata["sampling"])
-        self.graph = TensorRTGraph(forward, self.sampling.max_frames_per_segment) if use_graph else None
+        self.graph = TensorRTGraph(forward, self.sampling.max_frames_per_segment,
+                                   double_buffer=double_buffer) if use_graph else None
         self.fused_preprocess = PinnedPreprocess(self.graph, self.normalization) if fused_preprocess else None
+        self.double_buffer = double_buffer
 
     def images(self, open_video, decode_passes, timings):
         reformatter = VideoReformatter()
@@ -101,21 +104,27 @@ class VideoInference:
                 timings["download"] += download
             yield scores
 
-    def logits(self, open_video, decode_passes=1, timings=None, submission_profile=None):
+    def logits(self, open_video, decode_passes=1, timings=None, submission_profile=None, handoff=None, check_input=None):
         if self.fused_preprocess is not None:
+            frames = whole_video_samples(open_video, self.sampling, decode_passes=decode_passes)
+            if self.double_buffer:
+                return self.graph.replay_overlapped(frames, self.fused_preprocess.write, handoff, check_input)
             count = 0
-            for _, frame in whole_video_samples(open_video, self.sampling, decode_passes=decode_passes):
+            for _, frame in frames:
+                started = perf_counter() if handoff is not None else None
                 self.fused_preprocess.write(frame, count)
+                if handoff is not None:
+                    handoff["cpu_preprocessing"] += perf_counter() - started
                 count += 1
-            return self.graph.replay_clip(count)
+            return self.graph.replay_clip(count, handoff)
         images = self.images(open_video, decode_passes, timings)
         if self.graph is not None:
             return self.graph.predict_clip(images)
         return self.eager_logits(images, timings, submission_profile)
 
     @torch.inference_mode()
-    def classify(self, open_video, *, decode_passes=1, timings=None, submission_profile=None):
-        return self.decide_clip(self.logits(open_video, decode_passes, timings, submission_profile))
+    def classify(self, open_video, *, decode_passes=1, timings=None, submission_profile=None, handoff=None):
+        return self.decide_clip(self.logits(open_video, decode_passes, timings, submission_profile, handoff))
 
     def decide_clip(self, logits):
         probabilities = torch.zeros(len(VIEWS))
@@ -148,7 +157,8 @@ def load_metadata(path):
     return metadata
 
 
-def load_inference(directory, metadata, precision, runtime, stream, *, use_graph=False, fused_preprocess=False):
+def load_inference(directory, metadata, precision, runtime, stream, *, use_graph=False, fused_preprocess=False,
+                   double_buffer=False):
     model = metadata["models"][precision]
     name = Path(model["file"])
     if name.name != model["file"] or name.suffix != ".engine":
@@ -156,13 +166,63 @@ def load_inference(directory, metadata, precision, runtime, stream, *, use_graph
     engine_path = directory / name
     forward = TensorRTForward(engine_path, runtime, stream, fp16=precision == "fp16",
                              expected_digest=model["sha256"])
-    return VideoInference(forward, metadata, use_graph=use_graph, fused_preprocess=fused_preprocess)
+    return VideoInference(forward, metadata, use_graph=use_graph, fused_preprocess=fused_preprocess,
+                          double_buffer=double_buffer)
 
 
 def write_report(path, report):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2, allow_nan=False)
+
+
+def profile_handoff(args, metadata, model):
+    measurements = {stage: [] for stage in HANDOFF_STAGES}
+    pending_frames = 0
+    rows = []
+    frames = 0
+    with ZipFile(args.archive, metadata_encoding="utf-8") as archive:
+        for _, path, _ in stanford_members(archive, "val", metadata)[:WARMUP_CLIPS]:
+            video = archive.read(path)
+            model.classify(lambda: av.open(io.BytesIO(video)))
+        for patient, path, truth in stanford_members(archive, "test", metadata):
+            video = archive.read(path)
+            timings = dict.fromkeys(HANDOFF_STAGES, 0.0)
+            if model.double_buffer:
+                timings["preprocess_frames_with_pending_gpu"] = 0
+            result = model.classify(lambda: av.open(io.BytesIO(video)), handoff=timings)
+            pending_frames += timings.pop("preprocess_frames_with_pending_gpu", 0)
+            for stage, elapsed in timings.items():
+                measurements[stage].append(elapsed)
+            rows.append((truth, (*VIEWS, None).index(result["view"]), patient))
+            frames += result["sampled_frames"]
+            if len(rows) % 100 == 0:
+                print(f"已测量 {len(rows)} 段视频的 CPU 和 GPU 等待时间", flush=True)
+    if (len(rows) != metadata["clips"] or len({row[2] for row in rows}) != metadata["patients"]
+            or frames != metadata["frames"] or summarize(rows, VIEWS) != metadata["models"]["fp16"]["view"]):
+        raise ValueError("等待时间测量未复现已锁定的测试折")
+    if not model.double_buffer:
+        measurements["gpu_wait_for_preprocessing"] = measurements["cpu_preprocessing"]
+    write_report(args.report, {
+        "dataset": metadata["dataset"], "original_fold": "0", "clips": len(rows), "sampled_frames": frames,
+        "fp16_engine_sha256": model.forward.digest,
+        "runtime": {"gpu": torch.cuda.get_device_name(), "tensorrt": trt.__version__,
+                    "decode_passes": 1, "warmup_validation_clips": WARMUP_CLIPS, "batch": 1,
+                    "double_buffer": model.double_buffer},
+        **({"frames_preprocessed_while_previous_gpu_work_pending": pending_frames,
+            "eligible_following_frames": frames - len(rows)} if model.double_buffer else {}),
+        "timing_scope": {
+            "cpu_preprocessing": "Sum of resize, normalization and direct pinned input writes per clip",
+            "gpu_wait_for_preprocessing": "No GPU inference for this pipeline during serial CPU preprocessing. "
+                                          "Equals cpu_preprocessing by schedule; excludes decode and other GPU clients.",
+            "cpu_wait_input_slot": "Host wait before reusing a pinned input slot",
+            "cpu_wait_clip": "Host wall time inside final stream synchronize, including pending copies and inference",
+            "frames_preprocessed_while_previous_gpu_work_pending": "Previous frame's readback event was incomplete "
+                                                                  "at start of preprocessing; not GPU utilization",
+        },
+        "per_clip": {stage: latency_summary(values) for stage, values in measurements.items()},
+    })
+    print(f"完成 {len(rows)} 段、{frames} 帧的等待测量", flush=True)
 
 
 def profile_pipeline(args, metadata, model):
@@ -484,8 +544,16 @@ def benchmark_fp16_paths(args, metadata, models):
         for _, path, _ in test:
             video = archive.read(path)
             expected = before_model.logits(lambda: av.open(io.BytesIO(video)))
-            observed = after_model.logits(lambda: av.open(io.BytesIO(video)))
-            if compare_inputs:
+            if after_model.double_buffer:
+                def check_input(index, tensor):
+                    if index >= len(expected) or not torch.equal(before_model.graph.host_inputs[index], tensor):
+                        raise ValueError("双缓冲改变了抽样帧的归一化输入")
+
+                observed = after_model.logits(lambda: av.open(io.BytesIO(video)), check_input=check_input)
+                identical_inputs += len(observed)
+            else:
+                observed = after_model.logits(lambda: av.open(io.BytesIO(video)))
+            if compare_inputs and not after_model.double_buffer:
                 count = len(observed)
                 if count != len(expected) or not torch.equal(before_model.graph.host_inputs[:count],
                                                              after_model.graph.host_inputs[:count]):
@@ -532,15 +600,19 @@ def main():
     compare_graph = actions.add_parser("benchmark-graph")
     preprocess_profile = actions.add_parser("profile-preprocess")
     compare_preprocess = actions.add_parser("benchmark-preprocess")
+    handoff_profile = actions.add_parser("profile-handoff")
+    compare_overlap = actions.add_parser("benchmark-overlap")
     for action in (predict, compare, profile, compare_decode, submission, compare_graph,
-                   preprocess_profile, compare_preprocess):
+                   preprocess_profile, compare_preprocess, handoff_profile, compare_overlap):
         action.add_argument("--engine-report", type=Path, required=True)
     predict.add_argument("--video", type=Path, required=True)
     predict.add_argument("--precision", choices=("fp16", "fp32"), default="fp16")
-    for action in (compare, profile, compare_decode, submission, compare_graph, preprocess_profile, compare_preprocess):
+    for action in (compare, profile, compare_decode, submission, compare_graph, preprocess_profile,
+                   compare_preprocess, handoff_profile, compare_overlap):
         action.add_argument("--archive", type=Path, required=True)
         action.add_argument("--report", type=Path, required=True)
     profile.add_argument("--decode-passes", type=int, choices=(1, 2), default=1)
+    handoff_profile.add_argument("--double-buffer", action="store_true")
     args = parser.parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("TensorRT 视频推理需要 CUDA")
@@ -557,7 +629,7 @@ def main():
     if args.action == "predict":
         fp16 = args.precision == "fp16"
         model = load_inference(directory, metadata, args.precision, runtime, stream, use_graph=fp16,
-                               fused_preprocess=fp16)
+                               fused_preprocess=fp16, double_buffer=fp16)
         result = model.classify(lambda: av.open(str(args.video)))
         print(json.dumps({"precision": args.precision, **result}, ensure_ascii=False, allow_nan=False))
     elif args.action == "profile":
@@ -569,6 +641,10 @@ def main():
     elif args.action == "profile-preprocess":
         model = load_inference(directory, metadata, "fp16", runtime, stream, use_graph=True)
         profile_preprocess(args, metadata, model)
+    elif args.action == "profile-handoff":
+        model = load_inference(directory, metadata, "fp16", runtime, stream, use_graph=True, fused_preprocess=True,
+                               double_buffer=args.double_buffer)
+        profile_handoff(args, metadata, model)
     elif args.action == "benchmark-decode":
         model = load_inference(directory, metadata, "fp16", runtime, stream)
         benchmark_decode(args, metadata, model)
@@ -581,9 +657,14 @@ def main():
                                        fused_preprocess=fused)
                   for name, fused in (("original", False), ("fused", True))}
         benchmark_fp16_paths(args, metadata, models)
+    elif args.action == "benchmark-overlap":
+        models = {name: load_inference(directory, metadata, "fp16", runtime, stream, use_graph=True,
+                                       fused_preprocess=True, double_buffer=double_buffer)
+                  for name, double_buffer in (("serial", False), ("double_buffer", True))}
+        benchmark_fp16_paths(args, metadata, models)
     else:
         models = {name: load_inference(directory, metadata, name, runtime, stream, use_graph=name == "fp16",
-                                       fused_preprocess=name == "fp16")
+                                       fused_preprocess=name == "fp16", double_buffer=name == "fp16")
                   for name in ("fp32", "fp16")}
         benchmark(args, metadata, models)
 

@@ -140,12 +140,15 @@ class TensorRTForward:
 
 
 class TensorRTGraph:
-    def __init__(self, forward, max_frames):
+    def __init__(self, forward, max_frames, *, double_buffer=False):
         self.forward = forward
-        self.host_inputs = torch.empty((max_frames, *forward.input.shape), dtype=forward.input.dtype, pin_memory=True)
+        input_slots = 2 if double_buffer else max_frames
+        self.host_inputs = torch.empty((input_slots, *forward.input.shape),
+                                       dtype=forward.input.dtype, pin_memory=True)
         self.host_outputs = torch.empty((max_frames, forward.output.shape[1]), dtype=forward.output.dtype,
                                         pin_memory=True)
         self.graph = None
+        self.uploaded = [torch.cuda.Event() for _ in range(2)] if double_buffer else None
 
     def capture(self):
         forward = self.forward
@@ -164,7 +167,7 @@ class TensorRTGraph:
             count += 1
         return self.replay_clip(count)
 
-    def replay_clip(self, count):
+    def replay_clip(self, count, timings=None):
         if not count:
             raise ValueError("视频没有抽到可用帧")
         forward = self.forward
@@ -175,7 +178,51 @@ class TensorRTGraph:
                 forward.input.copy_(self.host_inputs[index], non_blocking=True)
                 self.graph.replay()
                 self.host_outputs[index].copy_(forward.output[0], non_blocking=True)
+            waiting = perf_counter() if timings is not None else None
             forward.stream.synchronize()
+            if timings is not None:
+                timings["cpu_wait_clip"] = perf_counter() - waiting
+        return self.host_outputs[:count]
+
+    def replay_overlapped(self, frames, write, timings=None, check_input=None):
+        forward = self.forward
+        count = 0
+        previous_complete = torch.cuda.Event() if timings is not None else None
+        with torch.cuda.stream(forward.stream):
+            try:
+                for index, (_, frame) in enumerate(frames):
+                    slot = index % 2
+                    if index >= 2 and not self.uploaded[slot].query():
+                        waiting = perf_counter() if timings is not None else None
+                        self.uploaded[slot].synchronize()
+                        if timings is not None:
+                            timings["cpu_wait_input_slot"] += perf_counter() - waiting
+                    if timings is not None:
+                        pending = index > 0 and not previous_complete.query()
+                        started = perf_counter()
+                    write(frame, slot)
+                    if timings is not None:
+                        timings["cpu_preprocessing"] += perf_counter() - started
+                        timings["preprocess_frames_with_pending_gpu"] += int(pending)
+                    if check_input is not None:
+                        check_input(index, self.host_inputs[slot])
+                    if self.graph is None:
+                        self.capture()
+                    forward.input.copy_(self.host_inputs[slot], non_blocking=True)
+                    self.uploaded[slot].record(forward.stream)
+                    self.graph.replay()
+                    self.host_outputs[index].copy_(forward.output[0], non_blocking=True)
+                    if previous_complete is not None:
+                        previous_complete.record(forward.stream)
+                    count += 1
+            finally:
+                # 即使预处理报错，也要等未完成的复制结束后再释放或复用锁页内存。
+                waiting = perf_counter() if timings is not None else None
+                forward.stream.synchronize()
+                if timings is not None:
+                    timings["cpu_wait_clip"] = perf_counter() - waiting
+        if not count:
+            raise ValueError("视频没有抽到可用帧")
         return self.host_outputs[:count]
 
 
