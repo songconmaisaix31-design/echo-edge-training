@@ -129,7 +129,10 @@ OLEDRST                     重新初始化屏
 - 任务 4「语音与振动」——部分：中文播报帧格式已验证、振动时序已改非阻塞；
   WAV 播放受 SYN6288E 限制做不到，无马达所以震感未验证。据此修掉两处阻塞导致的丢样，
   详见 [docs/firmware/voice.md](../docs/firmware/voice.md)
-- 任务 5~6——未开始（舵机、电脑联动）
+- 任务 5「双舵机与电源」——**缺件**：没有舵机、控制板、5V 电源。只把接口、
+  电流预算、电池充电器待确认项写死；固件侧只有角度→脉宽换算，不构成验收。
+  详见 [docs/firmware/servo.md](../docs/firmware/servo.md)
+- 任务 6「电脑联动」——进行中
 
 踩过的坑集中在 [docs/firmware/pitfalls.md](../docs/firmware/pitfalls.md)，
 硬件关键事实见 [docs/firmware/hardware-facts.md](../docs/firmware/hardware-facts.md)。
