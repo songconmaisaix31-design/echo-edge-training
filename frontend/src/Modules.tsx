@@ -22,6 +22,8 @@ type ViewPrediction = {
  probabilities: Record<'A4C' | 'PSAX', number>
 }
 
+type TerminalReceipt = {hint:string;sequence:number;ack_ms:number}
+
 type AnalysisJob = {
  id:number
  state:'pending'|'running'|'succeeded'|'failed'|'interrupted'
@@ -37,7 +39,12 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
  const [busy,setBusy]=useState(false),[error,setError]=useState('')
  const [history,setHistory]=useState<AnalysisJob[]>([])
  const [historyError,setHistoryError]=useState('')
- const result=history.find(job=>job.state==='succeeded')?.output
+ const resultJob=history.find(job=>job.state==='succeeded'&&job.output)
+ const result=resultJob?.output
+ const [terminalConfigured,setTerminalConfigured]=useState(false)
+ const [terminalBusy,setTerminalBusy]=useState(false)
+ const [terminalReceipt,setTerminalReceipt]=useState<{jobId:number;value:TerminalReceipt}|null>(null)
+ const [terminalError,setTerminalError]=useState('')
  const latest=history[0]
  const [input,setInput]=useState<{id:string;status:InputStatus}|null>(null)
  const [inputError,setInputError]=useState('')
@@ -47,6 +54,11 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
   setInputError('')
   setHistory([])
   setHistoryError('')
+  setTerminalReceipt(null)
+  setTerminalError('')
+  api<{terminalConfigured:boolean}>('/capabilities').then(capabilities=>{
+   if(current)setTerminalConfigured(capabilities.terminalConfigured)
+  }).catch(()=>{if(current)setTerminalConfigured(false)})
   api<AnalysisJob[]>('/media/'+id+'/analysis-jobs').then(rows=>{
    if(current)setHistory(rows)
   }).catch(e=>{if(current)setHistoryError(e.message)})
@@ -57,13 +69,22 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
  },[id])
  const eligibility=input?.id===id?input.status:null
  async function predict(){
-  setBusy(true);setError('')
+  setBusy(true);setError('');setTerminalError('')
   try{
    const job=await api<AnalysisJob>('/media/'+id+'/analysis-jobs',{})
    setHistory(rows=>[job,...rows.filter(row=>row.id!==job.id)])
   }
   catch(e){setError((e as Error).message)}
   finally{setBusy(false)}
+ }
+ async function sendToTerminal(jobId:number){
+  setTerminalBusy(true);setTerminalError('');setTerminalReceipt(null)
+  try{
+   const value=await api<TerminalReceipt>('/analysis-jobs/'+jobId+'/terminal',{})
+   setTerminalReceipt({jobId,value})
+  }
+  catch(e){setTerminalError((e as Error).message)}
+  finally{setTerminalBusy(false)}
  }
  return <>
   <p>{detail || '当前影像尚无切面推理结果。'}</p>
@@ -75,6 +96,13 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
     <summary>查看模型详情</summary>
     <p>抽样 {result.sampled_frames} 帧 · A4C {(result.probabilities.A4C*100).toFixed(1)}% · PSAX {(result.probabilities.PSAX*100).toFixed(1)}%</p>
    </details>
+  </div>}
+  {resultJob&&terminalConfigured&&<div className="record">
+   <Button variant="outline" disabled={terminalBusy||busy} onClick={()=>void sendToTerminal(resultJob.id)}>
+    {terminalBusy?'等待终端回执…':'发送切面到终端'}
+   </Button>
+   {terminalReceipt?.jobId===resultJob.id&&<p role="status">终端已接收 {terminalReceipt.value.hint} · 回执 #{terminalReceipt.value.sequence}</p>}
+   {terminalError&&<p role="alert">{terminalError}</p>}
   </div>}
   {historyError&&<p role="alert">读取分析历史失败：{historyError}</p>}
   {id&&<p role="status">分析状态：{busy?'运行中':latest?{pending:'待处理',running:'运行中',succeeded:'成功',failed:'失败',interrupted:'已中断'}[latest.state]:'暂无记录'}</p>}

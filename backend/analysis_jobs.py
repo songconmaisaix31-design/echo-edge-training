@@ -11,6 +11,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, sele
 
 import model_inference
 import platform_db as db
+import terminal_link
 from clinical import Examination
 from model_protocol import ModelAdapter, ModelInput, ModelOutput
 
@@ -175,6 +176,23 @@ def register(app, media_folder):
                 raise HTTPException(404, "分析任务不存在")
             db.get_case(session, job.exam_id, user)
             return serialize(job)
+
+    @app.post("/api/v1/analysis-jobs/{key}/terminal")
+    def send_terminal(key: int, user=Depends(db.current)):
+        with db.Session() as session:
+            job = session.get(AnalysisJob, key)
+            if job is None:
+                raise HTTPException(404, "分析任务不存在")
+            case = db.get_case(session, job.exam_id, user)
+            if user.role != "admin" and case.owner != user.id:
+                raise HTTPException(403, "只有检查创建者或管理员可发送终端提示")
+            if job.state != "succeeded" or job.model_type != "stanford_view" or not job.output:
+                raise HTTPException(409, "只有成功的切面分析可发送到终端")
+            output = json.loads(job.output)
+            if "view" not in output or output["view"] not in ("A4C", "PSAX", None):
+                raise HTTPException(409, "该任务没有有效的切面结果")
+            view = output["view"]
+        return terminal_link.send_view(view)
 
     @app.get("/api/v1/examinations/{key}/analysis-jobs")
     def exam_history(key: int, user=Depends(db.current)):

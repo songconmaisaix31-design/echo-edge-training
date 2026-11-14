@@ -38,7 +38,8 @@ def fail(status, code, message):
 @app.get("/api/v1/capabilities")
 def capabilities():
     reason, config = model_inference.configuration()
-    return {"model": "Stanford 切面模型" if config else "unavailable", "modelDetail": reason, "formats": list(FORMATS), "maxBytes": LIMIT, "maxFrames": MAX_FRAMES}
+    return {"model": "Stanford 切面模型" if config else "unavailable", "modelDetail": reason, "formats": list(FORMATS), "maxBytes": LIMIT, "maxFrames": MAX_FRAMES,
+            "terminalConfigured": bool(os.environ.get("ECHO_TERMINAL_PORT"))}
 
 @app.post("/api/v1/media", status_code=201)
 def import_media(media: UploadFile = File(...), case_id: int = Form(...), user=Depends(current)):
