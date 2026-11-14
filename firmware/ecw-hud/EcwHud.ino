@@ -51,8 +51,8 @@ static void say(const char *fmt, ...) {
 }
 
 // ------------------------------------------------------------------ 屏刷新
-static void hudRender() {
-  if (!oled.online || !hudOn) return;
+static bool hudRender() {
+  if (!oled.online || !hudOn) return false;
 
   oled.clear();
   oled.text(0, 0, "ECW BRIDGE", 1);
@@ -75,8 +75,9 @@ static void hudRender() {
   oled.hline(0, 52, OLED_W);
   oled.text(0, 55, hudEvt, 1);
 
-  oled.show();
-  hudDirty = false;
+  oled.online = oled.show();
+  hudDirty = !oled.online;
+  return oled.online;
 }
 
 static void setEvt(const char *fmt, ...) {
@@ -516,15 +517,16 @@ static size_t parseHex(const char *s, uint8_t *out, size_t maxOut) {
   return (hi < 0) ? n : (size_t)-1;
 }
 
-static void hudBigText(const char *s) {
-  if (!oled.online) { say("屏不在线, 先 OLEDRST\r\n"); return; }
-  hudOn = false;                 // 下面手动画, 先关掉自动刷新
+static bool hudBigText(const char *s) {
+  if (!oled.online) return false;
   oled.clear();
   int n = (int)strlen(s);
   uint8_t scale = (n <= 10) ? 2 : 1;
   int w = n * 6 * scale;
   oled.text((OLED_W - w) / 2 < 0 ? 2 : (OLED_W - w) / 2, 20, s, scale);
-  oled.show();
+  oled.online = oled.show();
+  if (oled.online) hudOn = false;
+  return oled.online;
 }
 
 static void handle(char *line) {
@@ -540,14 +542,25 @@ static void handle(char *line) {
     const char *a = strchr(line, ' ');
     while (a && *a == ' ') a++;
     if (!a) { say("用法: HUD ON|OFF|TEXT <str>\r\n"); return; }
-    if (!strcasecmp(a, "ON"))  { hudOn = true; hudDirty = true; hudRender(); say("屏已开\r\n"); return; }
-    if (!strcasecmp(a, "OFF")) { hudOn = false; oled.clear(); oled.show(); say("屏已关\r\n"); return; }
+    if (!strcasecmp(a, "ON")) {
+      hudOn = true;
+      hudDirty = true;
+      say(hudRender() ? "屏已开\r\n" : "屏不在线, 先 OLEDRST\r\n");
+      return;
+    }
+    if (!strcasecmp(a, "OFF")) {
+      hudOn = false;
+      oled.clear();
+      oled.online = oled.online && oled.show();
+      say(oled.online ? "屏已关\r\n" : "屏不在线, 先 OLEDRST\r\n");
+      return;
+    }
     if (!strncasecmp(a, "TEXT", 4)) {
       const char *t = a + 4;
       while (*t == ' ') t++;
       if (!*t) { say("用法: HUD TEXT HELLO\r\n"); return; }
-      hudBigText(t);
-      say("已显示: %s (发 HUD ON 恢复状态页)\r\n", t);
+      if (hudBigText(t)) say("已显示: %s (发 HUD ON 恢复状态页)\r\n", t);
+      else say("屏不在线, 先 OLEDRST\r\n");
       return;
     }
     say("不认识: %s\r\n", a);
