@@ -101,6 +101,10 @@ EchoNet-Pediatric 左室心内膜腔单帧分割模型，训练、独立测试�
 
 CAMUS 独立测试（50 名留出病人、200 帧）：左室心内膜 Dice 0.9275、左室心肌 0.8553、左房 0.8835，前景平均 Dice 0.8888；影像质量患者-视位 macro-F1 0.591。EchoNet-Pediatric EF 模型患儿级 MAE 3.80，EF < 50% 异常筛查 AUROC 0.996（阳性 5 例，仅方向性证据）。模型与报告通过 [camus-structure-quality-v1](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/camus-structure-quality-v1) 与 [stanford-ef-epoch5](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-ef-epoch5) 提供。
 
+### CardiacUDC 四腔分割
+
+补充 [CardiacUDC](docs/CARDIACUDC.md)（293 段 A4C 视频、2,257 张标注帧、两家医院），把结构能力扩展到 LV / LA / RA / RV 四个腔室。许可存在标注不一致，按更严格口径限定非商业研究。独立测试（43 组 / 367 帧）：LV Dice 0.8243、LA 0.8279、RA 0.8841、RV 0.8420，前景平均 Dice 0.8446（帧级）/ 0.7300（组级宏平均）。权重与报告通过 [cardiacudc-fourchamber-v1](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1) 提供。
+
 ## 数据交付
 
 请把 [Excel 标注模板](templates/儿童心超标注模板.xlsx) 和 [训练数据交付要求](docs/TRAINING_DATA.md) 发给团队。首批优先收集拟部署设备上的完整去标识儿童经胸心超检查，包含灰阶、彩色多普勒、低质量画面、过渡和补扫。由儿科心超专家先确认切面和采集质量标签定义，再交付源影像和已复核的 Excel。
