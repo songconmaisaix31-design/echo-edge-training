@@ -25,10 +25,16 @@
 
 #include "oled_ssd1306.h"
 #include "panel_assets.h"
+#include "anim.h"
+#include "voice_lines.h"
 
 // ------------------------------------------------------------------ 硬件
 static const int OLED_SDA = 41;
 static const int OLED_SCL = 42;
+
+// SYN6288E: 只认 GB2312 文本帧, 自己合成自己放大, 见 docs/firmware/voice.md
+static const int TTS_TX = 5;      // ESP32 发 -> 模块 RX
+static const int TTS_RX = 6;      // 模块 TX -> ESP32 收
 
 // 走 I2C 时屏幕刷新约 25ms, 轮询周期留出足够余量
 static const uint32_t POLL_OK_MS = 1000;
@@ -91,6 +97,10 @@ static void saveConfig() {
 static Snapshot snap;
 static Snapshot shown;              // 上次真正画到屏上的内容
 static bool dirty = true;
+
+// 动画相位: 0..7 一个心动周期。放在这里是为了让 render() 也能画一帧静态的精灵
+static uint8_t animPhase = 0;
+static uint32_t animAt = 0;
 
 static uint32_t lastPoll = 0;
 static uint32_t pollInterval = POLL_OK_MS;
@@ -224,6 +234,11 @@ static bool fetchState(char *buf, size_t cap, int *codeOut) {
 }
 
 // ------------------------------------------------------------------ 绘制
+// 版式: 左栏 42x42 的动画, 右栏 80px 放数据。原来整屏都给了文字, 加了动画
+// 之后每样东西都得挪一次位置。
+static const int SPR_X = 2, SPR_Y = 19;
+static const int COL_X = 48, COL_W = OLED_W - COL_X;
+
 static void rectBox(int x, int y, int w, int h, bool fill) {
   if (fill) {
     for (int j = 0; j < h; j++)
@@ -387,25 +402,22 @@ static void drawData() {
   bool valid = (snap.state == ST_READY || snap.state == ST_STALE) && snap.view[0];
 
   if (!valid) {
-    // 没有结论时不摆代号、不画空进度条 —— 空条看着像故障
+    // 没有结论时不摆代号、不画空进度条 —— 空条看着像故障。
+    // 左栏留给精灵, 文字在右栏里居中。
     const char *lab = stateLabel();
-    cjkText((OLED_W - cjkWidth(lab)) / 2, 26, lab);
+    cjkText(COL_X + (COL_W - cjkWidth(lab)) / 2, 30, lab);
     const char *hint = statusHint();
-    microText((OLED_W - microWidth(hint)) / 2, 50, hint);
+    microText(COL_X + (COL_W - microWidth(hint)) / 2, 52, hint);
     return;
   }
 
-  // 代号最多 4 字符(PSAX)。3 字符用 3 倍字, 4 字符降到 2 倍, 否则会和右边
-  // 的中文名撞上 —— 128px 一行放不下 "PSAX" + "左室短轴" 都用 3 倍字。
-  int n = (int)strlen(snap.view);
-  int scale = (n <= 3) ? 3 : 2;
-  int vw = n * 6 * scale;
-  oled.text(6, scale == 3 ? 21 : 25, snap.view, (uint8_t)scale);
+  // 右栏只剩 80px: 代号固定 2 倍字(PSAX 48px), 中文另起一行, 不再并排
+  oled.text(COL_X, 19, snap.view, 2);
   // 后端的 label 可能缺失(模型返回 null 时), 用本地兜底词, 别在屏上留空
-  cjkText(6 + vw + 2, 23, snap.label[0] ? snap.label : stateLabel());
+  cjkText(COL_X, 35, snap.label[0] ? snap.label : stateLabel());
 
   // 置信度条
-  const int bx = 6, by = 44, bw = 94, bh = 8;
+  const int bx = COL_X, by = 54, bw = 52, bh = 7;
   rectBox(bx, by, bw, bh, false);
   int filled = (int)((bw - 2) * snap.conf);
   if (filled > 0) rectBox(bx + 1, by + 1, filled, bh - 2, true);
@@ -414,15 +426,10 @@ static void drawData() {
   // 带百分号: 光秃秃的 100 贴在进度条右边, 会被读成条上的刻度值而不是概率。
   // 4 个字符 24px, 从 101 起正好收在 125, 不压右边框。
   snprintf(pct, sizeof(pct), "%d%%", (int)(snap.conf * 100 + 0.5f));
-  oled.text(101, 44, pct, 1);
+  oled.text(101, 54, pct, 1);
 
-  // 细节: 次概率 / 采样帧数 / 数值精度
-  const char *second = strcmp(snap.view, "A4C") == 0 ? "PSAX" : "A4C";
-  float other = strcmp(snap.view, "A4C") == 0 ? snap.psax : snap.a4c;
-  char detail[40];
-  snprintf(detail, sizeof(detail), "%s %.2f   %dF   %s",
-           second, other, snap.frames, snap.precision[0] ? snap.precision : "--");
-  microText(6, 55, detail);
+  // 次概率/帧数/精度这一行撤掉了: 加了动画之后右栏只剩 80px, 四行挤在 45px
+  // 里每行都贴边。这几个数是排障用的, STATUS 里还有, 不占屏幕。
 }
 
 static void render(bool force) {
@@ -431,9 +438,145 @@ static void render(bool force) {
   oled.clear();
   drawChrome();
   drawData();
+  drawSpriteNow();          // 整屏重绘时也要有一帧精灵, 不然动画区会空 120ms
   oled.show();
   dirty = false;
   shown = snap;
+}
+
+// ------------------------------------------------------------------ 动画
+// 一次全帧刷新 = I2C 推 1KB, 400kHz 下约 25ms, 所以 120ms 一帧只占 20% 总线。
+// 真正打断动画的是同步 HTTP: 每轮轮询会把主循环卡住 100~400ms, 所以有数据时
+// 轮询间隔放宽到 1.5 秒, 让卡顿稀一点。
+static bool lowConf() { return snap.conf > 0 && snap.conf < 0.65f; }
+
+// 屏上的形状就是模型看到的切面: 认出四腔心画整颗心, 认出短轴画横截面圆环。
+// 这是唯一的"对外映射", 以后接上病理模型, 换这一个函数就行。
+static SpriteMode spriteMode() {
+  if (WiFi.status() != WL_CONNECTED) return SP_BROKEN;
+  switch (snap.state) {
+    case ST_READY:
+    case ST_STALE:   return strcmp(snap.view, "A4C") == 0 ? SP_HEART : SP_RING;
+    case ST_RUNNING: return SP_BUSY;
+    case ST_FAILED:  return SP_BROKEN;
+    default:         return SP_SLEEP;
+  }
+}
+
+static uint32_t animPeriod() {
+  switch (snap.state) {
+    case ST_READY:   return 120;   // 约 8 帧/秒, 一个心动周期 1 秒
+    case ST_STALE:   return 220;   // 旧数据跳得慢, 一眼看出"这不是现在的"
+    case ST_RUNNING: return 140;
+    default:         return 300;
+  }
+}
+
+static void clearBox(int x, int y, int w, int h) {
+  for (int j = 0; j < h; j++) {
+    for (int i = 0; i < w; i++) {
+      int cx = x + i, cy = y + j;
+      if (cx < 0 || cx >= OLED_W || cy < 0 || cy >= OLED_H) continue;
+      oled.fb[(cy >> 3) * OLED_W + cx] &= (uint8_t)~(1 << (cy & 7));
+    }
+  }
+}
+
+static void drawSpriteNow() {
+  if (!oledOk) return;
+  clearBox(SPR_X, SPR_Y, SPR_W, SPR_H);
+  animDraw(oled, spriteMode(), animPhase, SPR_X, SPR_Y, lowConf());
+}
+
+static void animTick() {
+  if (!oledOk) return;
+  uint32_t now = millis();
+  if (now - animAt < animPeriod()) return;
+  animAt = now;
+  animPhase = (uint8_t)((animPhase + 1) & 7);
+  drawSpriteNow();
+  oled.show();
+}
+
+// ------------------------------------------------------------------ 语音
+// SYN6288E 只会念文本, 不会放音频; 文本必须是 GB2312, 所以字节全部来自
+// voice_lines.h (tools/voice_lines.py 在打包阶段转好)。
+static bool ttsOn = true;
+static long spokenSeq = -1;
+static PanelState spokenState = ST_EMPTY;
+static bool wasOnline = false;
+
+// 帧: 0xFD | lenH | lenL | 0x01(合成播放) | 0x00(GB2312) | data... | XOR
+static void ttsSend(const uint8_t *gb, uint16_t n) {
+  if (!ttsOn || n == 0) return;
+  if (n > 190) n = 190;                  // 模块单帧文本上限 200 字节
+  uint8_t frame[200];
+  uint16_t len = (uint16_t)(n + 2);
+  frame[0] = 0xFD;
+  frame[1] = (uint8_t)(len >> 8);
+  frame[2] = (uint8_t)(len & 0xFF);
+  frame[3] = 0x01;
+  frame[4] = 0x00;
+  memcpy(frame + 5, gb, n);
+  uint8_t x = 0;
+  for (int i = 0; i < 5 + n; i++) x ^= frame[i];
+  frame[5 + n] = x;
+  Serial2.write(frame, 6 + n);
+  // 不等发送完: 9600 下 60 字节约 60ms, flush 会把动画卡住一帧
+  say("[TTS] 播报 %u 字节文本\r\n", n);
+}
+
+// 句子是拼出来的: 头 + 切面 + 置信度头 + 等级。拼的仍然是 GB2312 字节,
+// 对模块来说就是一段普通文本, 所以不用把 2x3 种组合存成 6 条完整句子。
+static uint8_t voBuf[200];
+static uint8_t voN = 0;
+
+static void voReset() { voN = 0; }
+
+static void voAdd(VoiceId id) {
+  const VoiceLine &v = VOICE[id];
+  if (voN + v.n < sizeof(voBuf)) { memcpy(voBuf + voN, v.p, v.n); voN += v.n; }
+}
+
+static void voSay() { if (voN) { ttsSend(voBuf, voN); voN = 0; } }
+
+static void speakOne(VoiceId id) { voReset(); voAdd(id); voSay(); }
+
+static void speakResult() {
+  if (!snap.view[0]) { speakOne(VL_IDLE); return; }   // 还没结论, 别念半句
+  voReset();
+  voAdd(VL_HEAD);
+  voAdd(strcmp(snap.view, "A4C") == 0 ? VL_VIEW_A4C : VL_VIEW_PSAX);
+  voAdd(VL_CONF_HEAD);
+  voAdd(snap.conf >= 0.9f ? VL_CONF_HIGH
+        : (snap.conf >= 0.7f ? VL_CONF_MID : VL_CONF_LOW));
+  voSay();
+}
+
+static void voiceTick() {
+  bool online = WiFi.status() == WL_CONNECTED;
+  if (online != wasOnline) {
+    wasOnline = online;
+    speakOne(online ? VL_HELLO : VL_OFFLINE);
+    if (!online) { spokenState = ST_FAILED; spokenSeq = -1; }
+    return;
+  }
+  if (!online) return;
+
+  // 新结果只认 seq: 每秒轮询一次, 按"数据变了就说"会变成复读机
+  if (snap.state == ST_READY && snap.seq != spokenSeq) {
+    spokenSeq = snap.seq;
+    spokenState = ST_READY;
+    speakResult();
+    return;
+  }
+
+  if (snap.state != spokenState) {
+    spokenState = snap.state;
+    if (snap.state == ST_STALE) speakOne(VL_STALE);
+    else if (snap.state == ST_RUNNING) speakOne(VL_RUNNING);
+    else if (snap.state == ST_EMPTY) speakOne(VL_IDLE);
+  }
 }
 
 // ------------------------------------------------------------------ WiFi
@@ -501,7 +644,9 @@ static void pollOnce() {
     snap = next;
     okCount++;
     failStreak = 0;
-    pollInterval = POLL_OK_MS;
+    // 有数据时动画在跑, 同步 HTTP 会卡住它; 放宽到 1.5 秒让卡顿稀一点。
+    // 新结果最多晚 1.5 秒上屏, 对一个秒级的显示任务够用。
+    pollInterval = (snap.state == ST_READY) ? 1500 : POLL_OK_MS;
     lastOkMs = millis();
   } else {
     failCount++;
@@ -533,6 +678,8 @@ static void printStatus() {
   say("结论    : %s / %s  conf=%.3f  frames=%d  %s\r\n",
       snap.view[0] ? snap.view : "-", stateLabel(), snap.conf, snap.frames,
       snap.precision[0] ? snap.precision : "-");
+  say("播报    : %s  TX=GPIO%d  已念 seq=%ld  动画相位 %d\r\n",
+      ttsOn ? "开" : "静音", TTS_TX, spokenSeq, animPhase);
   say("轮询    : 成功 %lu / 失败 %lu, 当前间隔 %lu ms, 最近 code=%d\r\n",
       (unsigned long)okCount, (unsigned long)failCount,
       (unsigned long)pollInterval, lastCode);
@@ -550,6 +697,9 @@ static void help() {
   say("  RENDER               强制重绘\r\n");
   say("  DEMO <state>         本地演示: ready psax idle running offline\r\n");
   say("  DUMP                 导出帧缓冲 (十六进制, 用于核对屏上内容)\r\n");
+  say("  TTS <n>              播报第 n 条文本 (0 起, 见 voice_lines.h)\r\n");
+  say("  SAY                  按当前结果拼一句播一次\r\n");
+  say("  MUTE                 播报开关\r\n");
   say("  SCAN                 WiFi 扫描\r\n");
   say("  HELP                 本帮助\r\n");
   say("===================\r\n");
@@ -603,6 +753,45 @@ static void handle(char *line) {
   if (!strcasecmp(line, "POLL")) {
     demoMode = false;                 // 退出演示, 回到真实数据
     pollOnce(); render(true); say("已拉取\r\n"); return;
+  }
+  if (!strcasecmp(line, "TTS")) {
+    int n = arg ? atoi(arg) : 0;
+    if (n < 0 || n >= (int)(sizeof(VOICE) / sizeof(VOICE[0]))) {
+      say("序号 0..%d\r\n", (int)(sizeof(VOICE) / sizeof(VOICE[0])) - 1);
+      return;
+    }
+    voReset(); voAdd((VoiceId)n); voSay();
+    // 有的批次要等合成启动之后才回, 所以窗口给到 1.5 秒, 顺便把所有字节打出来
+    uint8_t seen[8];
+    int cnt = 0;
+    uint32_t t0 = millis();
+    while (millis() - t0 < 1500) {
+      if (Serial2.available()) {
+        uint8_t b = (uint8_t)Serial2.read();
+        if (cnt < (int)sizeof(seen)) seen[cnt++] = b;
+      }
+      delay(2);
+    }
+    if (cnt) {
+      say("[TTS] 回执 %d 字节:", cnt);
+      for (int i = 0; i < cnt; i++) {
+        uint8_t r = seen[i];
+        say(" %02X(%s)", r,
+            r == 0x41 ? "接收成功" : r == 0x45 ? "接收失败"
+            : r == 0x4E ? "正在播报" : r == 0x4F ? "空闲"
+            : r == 0x4A ? "初始化" : "?");
+      }
+      say("\r\n");
+    } else {
+      say("[TTS] 1.5 秒内没有回执 —— 查 GPIO5/6 是否接反、模块 3V3 是否上电\r\n");
+    }
+    return;
+  }
+  if (!strcasecmp(line, "SAY")) { speakResult(); return; }
+  if (!strcasecmp(line, "MUTE")) {
+    ttsOn = !ttsOn;
+    say("[TTS] %s\r\n", ttsOn ? "已开启" : "已静音");
+    return;
   }
   if (!strcasecmp(line, "SCAN")) {
     say("扫描中...\r\n");
@@ -674,6 +863,10 @@ void setup() {
   loadConfig();
   say("[CFG] ssid=%s url=%s\r\n", cfg.ssid[0] ? cfg.ssid : "(未设置)", cfg.url);
 
+  // 注意参数顺序: begin(baud, config, rxPin, txPin)
+  Serial2.begin(9600, SERIAL_8N1, TTS_RX, TTS_TX);
+  say("[TTS] UART2 9600 8N1  TX=GPIO%d RX=GPIO%d\r\n", TTS_TX, TTS_RX);
+
   Wire.begin(OLED_SDA, OLED_SCL, 400000);
   oledOk = oled.begin(OLED_SDA, OLED_SCL, 400000);
   say("[OLED] %s (0x%02X)\r\n", oledOk ? "在线" : "未找到", oled.addr);
@@ -718,5 +911,7 @@ void loop() {
   }
 
   render(false);
+  animTick();
+  voiceTick();
   delay(10);
 }
