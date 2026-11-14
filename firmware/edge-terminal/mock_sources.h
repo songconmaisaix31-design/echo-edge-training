@@ -31,7 +31,7 @@
 #define MOCK_ENV    (MOCK_TEMP | MOCK_RH | MOCK_PRES)
 // MOCK_ALL 只包含"本固件已经实现的源"。每补一个源就把它加进来，
 // 避免 MOCK ON 打开一堆还没实现的位、在 STAT 里看着像已经支持。
-#define MOCK_ALL    (MOCK_ENV)
+#define MOCK_ALL    (MOCK_ENV | MOCK_PPG | MOCK_VIB)
 
 class Mock {
  public:

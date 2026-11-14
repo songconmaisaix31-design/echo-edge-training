@@ -9,7 +9,7 @@ Windows 下枚举为 **COM4**（`1A86:55D3`）。不是原生 USB 口。
 
 | 目录 | 作用 | 状态 |
 | --- | --- | --- |
-| `edge-terminal/` | **终端主固件**：环境读数 + 中文播报 + 振动 + 双舵机 + 电脑提示协议（issue #2/#4/#5/#6） | 已上板；环境三项数据由 mock 供给 |
+| `edge-terminal/` | **终端主固件**：环境读数 + 脉率 + 中文播报 + 振动 + 双舵机 + 电脑提示协议（issue #2/#4/#5/#6） | 已上板；环境与 PPG 数据由 mock 供给 |
 | `ecw-hud/` | ECW 桥 + SSD1306 状态屏二合一 | 已上板运行 |
 | `oled-test/` | 纯点屏验证，带电气级引脚探测 | 已验证（一次命中 0x3C） |
 | `ecw-bridge/` | ECW6700 桥连与联调（找引脚、找波特率、透传） | 已验证 |
@@ -98,6 +98,8 @@ OLEDRST                     重新初始化屏
 ```
 
 `tools/ecw_bridge_cli.py` 是电脑侧封装，免去手敲 `BRIDGE` 前缀。
+`tools/ppg_analyze.py` 把 `PPG LOG` 导出的原始采样独立复算成脉率，并检查时间戳单调性、
+采样间隔与丢点（用于跟固件里的检测结果对照）。
 
 ## Mock 数据层
 
@@ -108,6 +110,7 @@ OLEDRST                     重新初始化屏
 - 器件一旦上线，mock 自动让位，绝不覆盖真实读数
 - 每个 mock 值都带标记：屏上 `M` 角标、串口 `[MOCK:..]`、CSV 第 9 列
 - `MOCK OFF` 即可回到全离线状态，用于验证"断开传感器该项显示不可用"
+- 有算法的量（脉率、质量分）不直接造结论，由正式算法从 mock 波形里算出来
 
 **带 mock 数据的日志不能当硬件验收证据。** 设计与命令见
 [docs/firmware/mock-data.md](../docs/firmware/mock-data.md)。
@@ -119,7 +122,17 @@ OLEDRST                     重新初始化屏
 - 任务 1「接管固件」——已完成：工程、构建命令、板卡接线全部落地
 - 任务 2「环境读数」——链路已通：OLED 实时刷新三项读数、单位、有效性角标；
   数据当前来自 mock，实物接线与对照测量仍待补
-- 任务 3~6——未开始（心跳、语音振动、舵机、电脑联动）
+- 任务 3「心跳采集」——**物理上做不了**：套件里的 ITR9909 只有 LM393 比较输出（DO），
+  没有模拟通道，采不到脉搏波。已把 PPG 采集链路和峰值检测算法做完（50 Hz，RR 中位数
+  + 自适应不应期 + 相对幅度门），波形源是 mock；接 MAX30102 时只换波形源。
+  详见 [docs/firmware/pulse.md](../docs/firmware/pulse.md)
+- 任务 4「语音与振动」——部分：中文播报帧格式已验证、振动时序已改非阻塞；
+  WAV 播放受 SYN6288E 限制做不到，无马达所以震感未验证。据此修掉两处阻塞导致的丢样，
+  详见 [docs/firmware/voice.md](../docs/firmware/voice.md)
+- 任务 5「双舵机与电源」——**缺件**：没有舵机、控制板、5V 电源。只把接口、
+  电流预算、电池充电器待确认项写死；固件侧只有角度→脉宽换算，不构成验收。
+  详见 [docs/firmware/servo.md](../docs/firmware/servo.md)
+- 任务 6「电脑联动」——进行中
 
 踩过的坑集中在 [docs/firmware/pitfalls.md](../docs/firmware/pitfalls.md)，
 硬件关键事实见 [docs/firmware/hardware-facts.md](../docs/firmware/hardware-facts.md)。
