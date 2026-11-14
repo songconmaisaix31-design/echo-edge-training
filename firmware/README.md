@@ -35,7 +35,7 @@ arduino-cli compile --fqbn $board --output-dir $output $sketch
 
 Arduino CLI 要求主 `.ino` 与草图目录同名，因此在 Git 忽略的 `work/` 下使用 `EcwHud` 目录。`firmware/tools/flash.sh` 使用以脚本目录为基准的构建产物和 `boot_app0.bin` 路径。使用前按脚本核对文件位置。
 
-2026 年 11 月 15 日用上述板型完成 EcwHud 编译，生成应用、bootloader、分区表、合并映像、ELF 和 map 文件。应用 `EcwHud.ino.bin` 为 330,000 字节，编译报告的程序存储和全局变量占用分别为 329,849 字节和 24,880 字节。实机串口记录来自板上原有固件。
+2026 年 11 月 15 日用上述板型完成 EcwHud 编译，生成应用、bootloader、分区表、合并映像、ELF 和 map 文件。应用 `EcwHud.ino.bin` 为 330,000 字节，编译报告的程序存储和全局变量占用分别为 329,849 字节和 24,880 字节。通过 `COM4` 将提交 `ab960ff` 对应的 bootloader、分区表、`boot_app0.bin` 和应用分区写入 ESP32-S3，esptool 5.6.0 校验四段写入数据均通过。连接阶段识别到 16 MB Flash 和 8 MB PSRAM。
 
 从仓库根目录运行串口工具：
 
@@ -45,7 +45,7 @@ python -X utf8 .\firmware\tools\serial_cli.py COM4 --baud 115200 --script 'HELP|
 
 `HELP` 返回当前固件的命令。`BUSC` 扫描 `GPIO41`／`GPIO42` 上的 I²C 设备，输出实际发现的地址。
 
-2026 年 11 月 15 日实机记录：Windows 将 `1A86:55D3` 枚举为 `COM4`。`HELP` 返回 `EcwHud / 桥 + 状态屏`，`BUSC` 找到一个设备 `0x3C`。发送 `HUD TEXT LINK OK` 后串口返回 `已显示: LINK OK`，发送 `HUD ON` 后返回 `屏已开`。这次记录覆盖主机命令和固件回执。OLED 画面、语音或振动、连续采样和 30 分钟联动需在现场另外验收。
+烧录后，`HELP` 返回 `EcwHud / 桥 + 状态屏`，`BUSC` 找到一个设备 `0x3C`。`HUD TEXT LINK OK`、`HUD OFF` 和 `HUD ON` 均返回成功回执。以电脑的单调时钟测量从发送 `HUD TEXT` 到收到对应完整回执的时间，连续发送 10 条不同文本均成功，中位数 42.931 ms，范围 42.080–43.939 ms。测试最后使用 `HUD ON` 恢复状态页。OLED 实际画面、断开屏幕后的失败回执、语音或振动、连续采样和 30 分钟联动仍需现场验收。
 
 按分区烧录时使用以下命令：
 
