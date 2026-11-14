@@ -58,7 +58,26 @@ MobileNetV3-Small（ImageNet 初始化）输入 224 × 224 灰度复制三通道
 
 v2 逐类召回：Good 0.511、Medium 0.895、Poor 0.333。混淆矩阵（行=真实，列=预测，Good/Medium/Poor）：`[[24, 23, 0], [3, 34, 1], [0, 10, 5]]`。
 
-影像质量是可分级主观标签，Poor 类样本少（测试 15 个患者-视位），模型对 Good 与 Poor 的区分仍是弱项；这一结果只能说明公开数据上可训练出有效信号，不能当作临床质量判定。
+影像质量是可分级主观标签，Poor 类样本少（测试 15 个患者-视位），模型对 Good 与 Poor 的区分仍是弱项。经项目确认，该模型按「提示级」使用，不作为临床质量判定。
+
+### 提示级使用
+
+质量模型对单段视频抽最多 8 帧取平均概率，映射为采集提示：
+
+| 模型输出 | 提示 |
+| --- | --- |
+| Good | 可评估 |
+| Medium | 可评估，建议关注图像质量 |
+| Poor | 建议补扫 |
+
+```powershell
+& $python -X utf8 .\train_camus.py predict --task quality `
+  --checkpoint '.\runs\camus-quality-v2\best.pt' --video '.\data\sample.avi'
+& $python -X utf8 .\train_camus.py predict --task seg --frame 20 `
+  --checkpoint '.\runs\camus-seg-v1\best.pt' --video '.\data\sample.avi' --mask '.\work\mask.png'
+```
+
+`predict` 输出一条 JSON（任务、epoch、类别概率或掩膜像素统计、提示文本），掩膜为 256 × 256 PNG（0 背景、1 LV 心内膜、2 LV 心肌、3 左房）。该入口只做研究性提示，不构成诊断。
 
 ## 限制
 
