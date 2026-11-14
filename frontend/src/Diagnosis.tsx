@@ -1,27 +1,29 @@
 import {useEffect,useState} from 'react'
-import {api,Player,ViewAnalysis} from './Modules'
+import {Player,ViewAnalysis} from './Modules'
+import {api} from './api'
 import {Button} from './button'
-import {diagnosisHref} from './diagnosis-contract'
+import {diagnosisHref,structureEvidenceHref} from './diagnosis-contract'
 import StructureEvidence from './StructureEvidence'
+import {useCapabilities} from './use-capabilities'
 import './Diagnosis.css'
 
 type Exam = {id:number;patient_id:number;snapshot:{name:string};kind:string;status:string;parameters?:{exam_date?:string|null}}
 type Case = {id:number;media:string[]}
-type Capabilities = {model:string;modelDetail?:string;structureConfigured?:boolean;terminalConfigured?:boolean}
 type ExamMedia = {examId:number;ids:string[]}
 const sections = ['AI 诊断结果','诊断证据','鉴别与复核','医生审核'] as const
 const states:Record<string,string> = {draft:'草稿',submitted:'待审核',reviewed:'已审核'}
 
 export default function Diagnosis({route}:{route:string}){
- const examId = route.split('/')[1] ?? ''
+ const [,examId='',panel,mediaId=''] = route.split('/')
  const [exams,setExams] = useState<Exam[]|null>(null)
  const [data,setData] = useState<ExamMedia|null>(null)
- const [selection,setSelection] = useState('')
- const [section,setSection] = useState<(typeof sections)[number]>(sections[0])
+ const [selection,setSelection] = useState(mediaId)
+ const [section,setSection] = useState<(typeof sections)[number]>(panel==='structure'?sections[1]:sections[0])
  const [error,setError] = useState('')
  const [revision,reload] = useState(0)
- const [cap,setCap] = useState<Capabilities|null>(null)
- const [capError,setCapError] = useState(false)
+ const modelStatus = useCapabilities(revision)
+ const capError = modelStatus==='disconnected'
+ const cap = modelStatus==='disconnected'?null:modelStatus
  const viewReady = cap?.model==='Stanford 切面模型'
  const exam = exams?.find(e=>String(e.id)===examId)
  const media = data && exam && data.examId===exam.id ? data.ids : []
@@ -30,7 +32,6 @@ export default function Diagnosis({route}:{route:string}){
  useEffect(()=>{
   let current=true
   api<Exam[]>('/examinations').then(rows=>{if(current)setExams(rows)}).catch(e=>{if(current)setError(e.message)})
-  api<Capabilities>('/capabilities').then(v=>{if(current)setCap(v)}).catch(()=>{if(current)setCapError(true)})
   return ()=>{current=false}
  },[revision])
 
@@ -46,7 +47,7 @@ export default function Diagnosis({route}:{route:string}){
  },[exam,revision])
 
  function refresh(){
-  setError('');setExams(null);setData(null);setCap(null);setCapError(false);reload(v=>v+1)
+  setError('');setExams(null);setData(null);reload(v=>v+1)
  }
 
  return <main className="dashboard business diagnosis">
@@ -59,9 +60,10 @@ export default function Diagnosis({route}:{route:string}){
    </div></div>
   <section className="queue padded diagnosis-context" aria-label="当前检查">
    <div className="diagnosis-toolbar"><h2>当前检查</h2>
-   <div className="context-bar"><label>选择检查<select value={exam?.id??''} disabled={!exams} onChange={e=>{location.hash=e.target.value?diagnosisHref(e.target.value):'#diagnosis'}}>
+   <div className="context-bar"><label>选择检查<select value={exam?.id??''} disabled={!exams} onChange={e=>{const id=e.target.value;location.hash=section==='诊断证据'?structureEvidenceHref(id):id?diagnosisHref(id):'#diagnosis'}}>
     <option value="">请选择检查</option>{exams?.map(e=><option key={e.id} value={e.id}>#{e.id} · {e.snapshot.name} · {e.parameters?.exam_date||'日期未记录'}</option>)}</select></label>
     {exam&&<Button variant="outline" asChild><a href={'#exams/'+exam.id}>查看检查详情</a></Button>}
+    {active&&section!=='诊断证据'&&<Button variant="outline" onClick={()=>setSection('诊断证据')}>打开四腔分割</Button>}
    </div></div>
    {error&&<p className="error" role="alert">{error}</p>}
    {!exams&&!error&&<p role="status">正在读取检查…</p>}
@@ -103,7 +105,8 @@ export default function Diagnosis({route}:{route:string}){
        {active?<ViewAnalysis key={active} id={active} available={viewReady} detail={capError?'无法读取模型状态。':cap?(viewReady?cap.modelDetail||'Stanford 切面模型可用。':'切面模型未接入。'):'正在读取模型状态…'}/>:<p>选择关联影像后可执行切面识别。</p>}
       </article>
      </>:section==='诊断证据'?<>
-     {active&&<StructureEvidence key={active} id={active} configured={!!cap?.structureConfigured} terminal={!!cap?.terminalConfigured}/>}
+     {active&&capError&&<p role="alert">无法读取四腔分割模型状态。</p>}
+     {active&&<StructureEvidence key={active} id={active} configured={cap?.structureConfigured??null} terminal={!!cap?.terminalConfigured}/>}
      <article className="diagnosis-card">
       <h2>诊断证据</h2><p>尚无模型返回的异常征象或证据帧。可在阅片区播放或逐帧查看当前影像。</p>
       <dl className="exam-overview"><div><dt>异常征象与关键帧</dt><dd>暂无记录</dd></div><div><dt>支持证据</dt><dd>暂无记录</dd></div><div><dt>缺失或矛盾证据</dt><dd>尚未评估</dd></div></dl>

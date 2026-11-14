@@ -76,7 +76,7 @@ Invoke-RestMethod 'http://127.0.0.1:5181/api/v1/capabilities' -TimeoutSec 5
 | `ECHO_CARDIACUDC_CHECKPOINT` | `cardiacudc-fourchamber-v1` 的第 18 轮权重绝对路径 |
 | `ECHO_TERMINAL_PORT` | 装有 EdgeTerminal 的串口，例如 `COM4` |
 
-网页和 API 只监听本机。需要避开已占用端口时使用 `./Start-EchoEdge.ps1 -ApiPort 8036 -WebPort 5188`，并以对应网页端口检查 `/api/v1/capabilities`。首页响应 `200`，能力接口应显示 `Stanford 研究模型 · PyTorch CPU FP32`、`structureConfigured: true` 和 `terminalConfigured: true`。如果模型配置为未就绪，检查 Release 文件是否齐全、环境变量是否为绝对路径。如果发送失败，核对板上固件和串口号，并退出占用串口的调试工具。启动脚本会输出服务日志位置。系统设置页的模型列表仍将结构分割显示为未接入，可从能力接口或「诊断证据」核对实际状态。
+网页和 API 只监听本机。需要避开已占用端口时使用 `./Start-EchoEdge.ps1 -ApiPort 8036 -WebPort 5188`，并以对应网页端口检查 `/api/v1/capabilities`。首页响应 `200`，能力接口应显示 `Stanford 研究模型 · PyTorch CPU FP32`、`structureConfigured: true` 和 `terminalConfigured: true`。在「系统管理 → 模型状态」可查看结构分割接入状态，点击「刷新数据」重新读取。如果模型配置为未就绪，检查 Release 文件是否齐全、环境变量是否为绝对路径。如果发送失败，核对板上固件和串口号，并退出占用串口的调试工具。启动脚本会输出服务日志位置。
 
 数据库、媒体原件和叠图保存在 `work/workstation/` 下。备份或迁移时停止写入，保留 SQLite 数据库和整个 `media/` 目录。模型和现场影像按各自授权保存。
 
@@ -111,6 +111,6 @@ arduino-cli upload --fqbn $board --port $port --input-dir $output $sketch
 
 ## 四腔结构分割
 
-在「AI 辅助诊断 → 诊断证据」选择已确认属于 A4C 的视频帧。`POST /api/v1/media/{id}/structure-jobs` 接收从 0 开始的源帧序号，校验 Release 权重的 SHA-256，以 256 × 256 灰度输入运行四腔 U-Net。结果保存源帧和时间戳、权重摘要及结构叠图。`GET /api/v1/analysis-jobs/{id}/overlay` 按检查访问权限返回叠图。检查创建者或管理员可以发送 `HINT MASK READY`，网页将在核对实际 `ACK` 后显示回执。
+在「AI 影像分析」中选择正式检查与影像，切换到「心脏结构」。也可在「AI 辅助诊断」选择检查后打开「诊断证据」，或从检查、影像页面进入「打开四腔分割」。选择已确认属于 A4C 的帧，再点击「运行四腔分割」。`POST /api/v1/media/{id}/structure-jobs` 接收从 0 开始的源帧序号，校验 Release 权重的 SHA-256，以 256 × 256 灰度输入运行四腔 U-Net。结果保存源帧和时间戳、权重摘要及结构叠图。`GET /api/v1/analysis-jobs/{id}/overlay` 按检查访问权限返回叠图。检查创建者或管理员可以发送 `HINT MASK READY`，网页将在核对实际 `ACK` 后显示回执。
 
 用上面的公开教学视频首帧复测。第 18 轮模型生成 9,330 个前景掩膜像素，网页成功加载叠图，刷新后读回叠图及原有切面结果。未登录读取叠图返回 401，越界帧返回 422。`COM4` 返回 `ACK,28`，命令到回执 25.416 ms。该结果用于验证数据流和设备指令。CardiacUDC 的发布范围为非商业研究，成人／混合队列的输出在儿童场景需要单独验证。[CardiacUDC Release](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1)
