@@ -126,7 +126,10 @@ OLEDRST                     重新初始化屏
   没有模拟通道，采不到脉搏波。已把 PPG 采集链路和峰值检测算法做完（50 Hz，RR 中位数
   + 自适应不应期 + 相对幅度门），波形源是 mock；接 MAX30102 时只换波形源。
   详见 [docs/firmware/pulse.md](../docs/firmware/pulse.md)
-- 任务 4~6——未开始（语音振动、舵机、电脑联动）
+- 任务 4「语音与振动」——部分：中文播报帧格式已验证、振动时序已改非阻塞；
+  WAV 播放受 SYN6288E 限制做不到，无马达所以震感未验证。据此修掉两处阻塞导致的丢样，
+  详见 [docs/firmware/voice.md](../docs/firmware/voice.md)
+- 任务 5~6——未开始（舵机、电脑联动）
 
 踩过的坑集中在 [docs/firmware/pitfalls.md](../docs/firmware/pitfalls.md)，
 硬件关键事实见 [docs/firmware/hardware-facts.md](../docs/firmware/hardware-facts.md)。
