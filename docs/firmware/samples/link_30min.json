@@ -1,0 +1,22 @@
+{
+  "port": "COM4",
+  "duration_s": 1800.1,
+  "hints_sent": 87,
+  "acks_received": 90,
+  "ack_seq_first_last": [
+    1,
+    90
+  ],
+  "ack_missing": 0,
+  "ack_arrival_pct": 103.45,
+  "env_lines": 1796,
+  "env_expected": 1800,
+  "env_loss_slots": 0,
+  "env_loss_pct": 0.0,
+  "env_max_gap_ms": 1020,
+  "env_malformed": 0,
+  "hr_lines": 1796,
+  "hr_valid_pct": 100.0,
+  "reboots": 0,
+  "bytes": 403366
+}
