@@ -34,6 +34,7 @@ from echo_dicom import DicomCine, US_CINE_SOP_CLASSES, color_counts
 WEIGHTS = MobileNet_V3_Small_Weights.IMAGENET1K_V1
 TASKS = ("view", "quality")
 IGNORE = -100
+PREPROCESSING = "ffmpeg_area_rgb_letterbox_224_imagenet"
 VIDEO_SUFFIXES = {".avi", ".mp4", ".mov"}
 DICOM_SUFFIXES = {".dcm", ".dicom", ".ima", ""}
 MEDIA_SUFFIXES = VIDEO_SUFFIXES | DICOM_SUFFIXES
@@ -47,9 +48,9 @@ HEADERS = {
 
 
 class EchoModel(nn.Module):
-    def __init__(self, view_count, quality_count):
+    def __init__(self, view_count, quality_count, weights=WEIGHTS):
         super().__init__()
-        backbone = mobilenet_v3_small(weights=WEIGHTS)
+        backbone = mobilenet_v3_small(weights=weights)
         self.features = backbone.features
         self.pool = backbone.avgpool
         width = backbone.classifier[0].in_features
@@ -68,6 +69,9 @@ class Clip:
     split: str
     duration_ms: int | None
     row: int = 0
+    mode: str = ""
+    device: str = ""
+    site: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,8 +80,9 @@ class Segment:
     clip_id: str
     start_ms: int
     end_ms: int
-    targets: tuple[int, int]
+    targets: tuple[int, ...]
     row: int = 0
+    mode: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,7 +162,7 @@ def clip_entry(row, where):
     path = string(row, "relative_path", where).replace("\\", "/")
     relative = PurePosixPath(path)
     split = string(row, "split", where, required=False)
-    string(row, "mode", where)
+    mode = string(row, "mode", where)
     if (not relative.name or relative.is_absolute() or ".." in relative.parts or ":" in path
             or relative.suffix.lower() not in MEDIA_SUFFIXES or relative.name.upper() == "DICOMDIR"):
         raise ValueError(f"{where} 的 relative_path 需要指向 DICOM cine、AVI、MP4 或 MOV 相对路径")
@@ -166,7 +171,10 @@ def clip_entry(row, where):
     duration = milliseconds(row, "duration_ms", where, required=False)
     if duration == 0:
         raise ValueError(f"{where} 的视频时长必须大于零")
-    return clip_id, study, Clip(relative.as_posix(), patient, split, duration, row["_row"])
+    return clip_id, study, Clip(
+        relative.as_posix(), patient, split, duration, row["_row"], mode,
+        string(row, "device_model", where, required=False), string(row, "site_code", where, required=False),
+    )
 
 
 def review_status(row, where):
@@ -274,7 +282,8 @@ def read_annotations(path, issue=None):
         confirmed[clip_id].append(Segment(key, clip_id, start, end, (IGNORE, IGNORE), row["_row"]))
         try:
             targets = segment_targets(row, where, label_indexes)
-            segments[clip_id].append(Segment(key, clip_id, start, end, targets, row["_row"]))
+            mode = string(row, "segment_mode", where, required=False)
+            segments[clip_id].append(Segment(key, clip_id, start, end, targets, row["_row"], mode))
         except ValueError as error:
             record("invalid_segment_label", error, "片段标注", row["_row"], **details)
     if not segments:
@@ -296,13 +305,18 @@ def read_annotations(path, issue=None):
     return labels, clips, segments
 
 
-def patient_splits(clips, segments, labels, seed, val_fraction, coverage_issue=None):
+def explicit_patient_splits(clips):
     assignments = {}
     for clip in clips.values():
         if clip.split:
             if assignments.get(clip.patient, clip.split) != clip.split:
                 raise ValueError(f"患儿 {clip.patient} 同时出现在多个数据分组")
             assignments[clip.patient] = clip.split
+    return assignments
+
+
+def patient_splits(clips, segments, labels, seed, val_fraction, coverage_issue=None):
+    assignments = explicit_patient_splits(clips)
     by_patient = defaultdict(set)
     for clip_id, rows in segments.items():
         supported = by_patient[clips[clip_id].patient]
@@ -745,7 +759,9 @@ def fit_model(args, records, labels, model, directory, checkpoint_metadata=None)
             best = score
             temporary = Path(directory) / "best.pt"
             torch.save({"model": model.state_dict(), "labels": labels, "epoch": epoch + 1,
-                        "val_macro_f1": score, "preprocessing": "ffmpeg_area_rgb_letterbox_224_imagenet",
+                        "val_macro_f1": score, "preprocessing": PREPROCESSING,
+                        "sampling": {"sample_fps": args.sample_fps,
+                                     "max_frames_per_segment": args.max_frames_per_segment},
                         **(checkpoint_metadata or {})}, temporary)
             temporary.replace(args.run_dir / "best.pt")
     (args.run_dir / "metrics.json").write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -758,7 +774,8 @@ def train(args, inputs):
     with tempfile.TemporaryDirectory(dir=args.run_dir) as directory:
         records = prepare_frames(args, inputs.clips, inputs.segments, inputs.assignments, Path(directory))
         sizes = [len(inputs.labels[task]) for task in TASKS]
-        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory)
+        fit_model(args, records, inputs.labels, EchoModel(*sizes), directory,
+                  {"patient_splits": inputs.assignments})
 
 
 def verify_logits(model, image, name):

@@ -6,6 +6,7 @@ import math
 import tempfile
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
@@ -24,9 +25,9 @@ SOURCE_SPLITS = tuple(map(str, range(10)))
 
 
 class ViewModel(nn.Module):
-    def __init__(self):
+    def __init__(self, weights=WEIGHTS):
         super().__init__()
-        backbone = mobilenet_v3_small(weights=WEIGHTS)
+        backbone = mobilenet_v3_small(weights=weights)
         self.features = backbone.features
         self.pool = backbone.avgpool
         self.view_head = nn.Linear(backbone.classifier[0].in_features, len(VIEWS))
@@ -75,13 +76,19 @@ def open_avi(archive, path):
     return av.open(io.BytesIO(archive.read(path)))
 
 
+@contextmanager
+def avi_frames(archive, path):
+    with open_avi(archive, path) as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = 1
+        yield video_frames(container, stream)
+
+
 def inspect_avi(archive, clip, args):
     path, view, split, table, line = clip
     try:
-        with open_avi(archive, path) as container:
-            stream = container.streams.video[0]
-            stream.codec_context.thread_count = 1
-            offsets = [offset for offset, _ in video_frames(container, stream)]
+        with avi_frames(archive, path) as frames:
+            offsets = [offset for offset, _ in frames]
         if not offsets:
             raise ValueError("AVI 没有可解码视频帧")
         segment = Segment(path, path, 0, math.floor(offsets[-1]) + 1, (VIEWS.index(view),))
@@ -162,10 +169,8 @@ def train_views(archive, args, prepared):
             role = "train" if source_split in train_splits else "val"
             reformatter = VideoReformatter()
             count = 0
-            with open_avi(archive, path) as container:
-                stream = container.streams.video[0]
-                stream.codec_context.thread_count = 1
-                samples = samples_in_intervals(video_frames(container, stream), [segment], [interval_bins(segment, args)])
+            with avi_frames(archive, path) as frames:
+                samples = samples_in_intervals(frames, [segment], [interval_bins(segment, args)])
                 for _, frame in samples:
                     output = Path(scratch) / f"{clip_number}_{count}.png"
                     resize_and_pad(frame, reformatter).save(output, compress_level=1)

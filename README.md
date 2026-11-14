@@ -5,7 +5,7 @@ RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质�
 ## 模型开发任务
 
 - [#7 回收团队标注并通过数据预检](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)
-- [#8 建立独立测试入口和评价报告](https://github.com/songconmaisaix31-design/echo-edge-training/issues/8)
+- [#8 建立独立测试入口和评价报告](https://github.com/songconmaisaix31-design/echo-edge-training/issues/8) · [评估命令和报告口径](docs/EVALUATION.md)
 - [#9 训练 EchoNet-Pediatric A4C／PSAX 基线](https://github.com/songconmaisaix31-design/echo-edge-training/issues/9)，待 Stanford 确认训练和权重用途。
 - [#10 在 RTX 5060 微调团队切面与采集质量双头](https://github.com/songconmaisaix31-design/echo-edge-training/issues/10)，使用团队标注和独立测试入口。
 - [#11 导出 ONNX 并验证 RTX 5060 推理](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11)
