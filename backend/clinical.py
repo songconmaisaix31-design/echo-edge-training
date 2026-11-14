@@ -182,7 +182,13 @@ def register(app):
             query = select(Entry, p.User.name).join(Examination, Entry.case_id == Examination.id).join(p.Case, p.Case.id == Examination.id).join(p.User, p.User.id == Entry.author).where(Examination.patient_id == key, Entry.kind == "report").order_by(Entry.id.desc())
             if user.role not in ("admin", "reviewer"):
                 query = query.where(p.Case.owner == user.id)
-            return [{"id": e.id, "exam_id": e.case_id, "created": e.created, "state": e.state, "author": name, "text": e.text, "review": None} for e, name in db.execute(query)]
+            drafts = [{"id": e.id, "exam_id": e.case_id, "created": e.created, "state": e.state, "author": name, "text": e.text, "review": None} for e, name in db.execute(query)]
+            from research_reports import ReportVersion, serialize_report
+            issued = select(ReportVersion).join(Examination, Examination.id == ReportVersion.exam_id).join(
+                p.Case, p.Case.id == Examination.id).where(Examination.patient_id == key)
+            if user.role not in ("admin", "reviewer"):
+                issued = issued.where(p.Case.owner == user.id)
+            return [serialize_report(row) for row in db.scalars(issued.order_by(ReportVersion.id.desc()))] + drafts
 
     @app.get("/api/v1/patients/{key}/revisions")
     def patient_revisions(key: int, user=Depends(p.current)):
@@ -298,7 +304,7 @@ def register(app):
         with p.Session() as db:
             case = p.get_case(db, key, user)
             records = db.scalars(select(Entry).where(Entry.case_id == key).order_by(Entry.id)).all()
-            lines = ["Echo Edge · 研究检查记录", case.title, "AI 模型未接入，未生成模型分析结果。"]
+            lines = ["Echo Edge · 研究检查记录", case.title, "本报告仅包含已保存的研究检查记录，不自动纳入切面模型结果。"]
             for item in records:
                 lines.extend([f"{item.created} | {item.kind} | {item.state}", item.text])
             p.log(db, user, "report.export", key)

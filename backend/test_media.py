@@ -1,4 +1,5 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 import platform_db as db
 
@@ -9,6 +10,7 @@ from PIL import Image
 import main
 
 def test_media_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(main.model_inference, "configuration", lambda: ("not configured", None))
     monkeypatch.setattr(main, "ROOT", tmp_path / "store")
     source = tmp_path / "fixture.mp4"
     with av.open(str(source), "w") as container:
@@ -46,14 +48,54 @@ def test_media_round_trip(tmp_path, monkeypatch):
     assert [frame["offsetMs"] for frame in metadata["frames"]] == [0, 40, 80]
     url = "/api/v1/media/" + metadata["id"]
     assert client.get(url).json() == metadata
+    folder = main.ROOT / metadata["id"]
+    assert (folder / "source.mp4").read_bytes() == source.read_bytes()
+    assert metadata["original"] == {"exists": True, "format": ".mp4"}
+    assert metadata["modelInputs"]["stanford_view"]["status"] == "model_unavailable"
+    assert client.get("/api/v1/capabilities").json()["model"] == "unavailable"
+    upload = lambda: client.post("/api/v1/media", data={"case_id": case_id},
+                                 files={"media": ("fixture.mp4", source.read_bytes())})
+
+    def commit_failure(session):
+        raise OperationalError("COMMIT", {}, RuntimeError("injected"))
+
+    def disk_failure(*args, **kwargs):
+        raise OSError("injected write error")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(sessions.class_, "commit", commit_failure)
+        assert upload().json()["detail"]["code"] == "media_database_failed"
+    with monkeypatch.context() as failure:
+        failure.setattr(Image.Image, "save", disk_failure)
+        assert upload().json()["detail"]["code"] == "media_storage_failed"
+    assert list(main.ROOT.iterdir()) == [folder]
+    with sessions() as session:
+        assert list(session.scalars(select(db.Media.id))) == [metadata["id"]]
+        assert len(list(session.scalars(select(db.Audit).where(db.Audit.action == "media.import")))) == 1
+
+    # Simulate old metadata and JPEGs without an original.
+    original_path = folder / "source.mp4"
+    original_path.rename(tmp_path / "archived-fixture.mp4")
+    monkeypatch.setattr(main.model_inference, "configuration", lambda: ("configured", object()))
+    legacy = client.get(url).json()
+    assert legacy["original"] == {"exists": False, "format": None}
+    assert legacy["modelInputs"]["stanford_view"]["status"] == "original_missing"
+    assert client.post(url + "/predict", json={}).status_code == 422
+    assert client.get(url + "/frames/1").content.startswith(b"\xff\xd8")
+    assert not original_path.exists()
+    (tmp_path / "archived-fixture.mp4").rename(original_path)
+    assert client.get(url).json()["modelInputs"]["stanford_view"]["status"] == "eligible"
+    original_path.rename(folder / "source.webm")
+    assert client.get(url).json()["modelInputs"]["stanford_view"]["status"] == "unsupported_format"
+
     assert client.get(url + "/frames/1").content.startswith(b"\xff\xd8")
     assert client.get(url + "/frames/3").status_code == 404
-    assert client.get("/api/v1/capabilities").json()["model"] == "unavailable"
     assert client.post("/api/v1/media", data={"case_id":case_id}, files={"media": ("file.dcm", b"x")}).status_code == 415
     assert client.post("/api/v1/media", data={"case_id":case_id}, files={"media": ("file.mp4", b"x")}).status_code == 422
     monkeypatch.setattr(main, "LIMIT", 2)
     assert client.post("/api/v1/media", data={"case_id":case_id}, files={"media": ("file.mp4", b"123")}).status_code == 413
 
+    assert list(main.ROOT.iterdir()) == [folder]
     assert client.post(f"/api/v1/cases/{case_id}/submit").status_code == 200
     assert client.post(f"/api/v1/cases/{case_id}/reviews",json={"text":"Reviewed"}).status_code == 403
     assert client.post("/api/v1/logout").status_code == 200
