@@ -1,5 +1,7 @@
 /** Future adapter payload. No endpoint or clinical capability is implied. */
 export const diagnosisHref = (examId: number | string) => '#diagnosis/' + encodeURIComponent(String(examId))
+export const structureEvidenceHref = (examId: number | string, mediaId?: string) =>
+  diagnosisHref(examId) + '/structure' + (mediaId ? '/' + mediaId : '')
 
 export type ModelVersion = {
   modelId: string

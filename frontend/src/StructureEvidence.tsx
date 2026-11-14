@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react'
-import {api} from './Modules'
+import {api} from './api'
 import {Button} from './button'
 
 type Frame = {index:number; offsetMs:number}
@@ -12,7 +12,7 @@ type Job = {
 }
 type Receipt = {hint:string;sequence:number}
 
-export default function StructureEvidence({id, configured, terminal}:{id:string;configured:boolean;terminal:boolean}){
+export default function StructureEvidence({id, configured, terminal}:{id:string;configured:boolean|null;terminal:boolean}){
  const [frames,setFrames]=useState<Frame[]>([])
  const [index,setIndex]=useState(0)
  const [job,setJob]=useState<Job|null>(null)
@@ -54,7 +54,7 @@ export default function StructureEvidence({id, configured, terminal}:{id:string;
    {frames.map(frame=><option key={frame.index} value={frame.index}>第 {frame.index+1} 帧 · {frame.offsetMs.toFixed(0)} ms</option>)}
   </select></label></div>
   <Button disabled={!configured||!frames.length||!!busy} onClick={()=>void segment()}>运行四腔分割</Button>
-  {!configured&&<p>四腔分割权重未配置。</p>}
+  {configured===false&&<p>四腔分割权重未配置。</p>}
   {busy&&<p role="status">{busy}</p>}
   {(error||job?.error)&&<p role="alert">{error||job?.error}</p>}
   {job?.state==='succeeded'&&job.output&&<div className="record">
