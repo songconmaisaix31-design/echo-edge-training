@@ -1,0 +1,100 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "陀螺仪 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 53,
+  "role": "host_driver",
+  "connector": "U2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C，AD0 接地时 7bit 地址 0x68；不传输左移后的地址。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心传感器型号",
+      "label": "核心传感器型号",
+      "value": "MPU-6050",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "加速度可选满量程",
+      "label": "加速度可选满量程",
+      "value": "±2、±4、±8、±16；通过配置选择",
+      "unit": "g",
+      "conditions": {}
+    },
+    {
+      "key": "加速度灵敏度换算系数",
+      "label": "加速度灵敏度换算系数",
+      "value": "±2g：16384；±4g：8192；±8g：4096；±16g：2048",
+      "unit": "LSB/g",
+      "conditions": {}
+    },
+    {
+      "key": "角速度可选满量程",
+      "label": "角速度可选满量程",
+      "value": "±250、±500、±1000、±2000；通过配置选择",
+      "unit": "°/s",
+      "conditions": {}
+    },
+    {
+      "key": "角速度灵敏度换算系数",
+      "label": "角速度灵敏度换算系数",
+      "value": "±250°/s：131；±500°/s：65.5；±1000°/s：32.8；±2000°/s：16.4",
+      "unit": "LSB/(°/s)",
+      "conditions": {}
+    },
+    {
+      "key": "加速度与角速度数据位宽",
+      "label": "加速度与角速度数据位宽",
+      "value": "每轴16位；不代表16位有效精度",
+      "unit": "bit",
+      "conditions": {}
+    },
+    {
+      "key": "当前硬件I²C地址",
+      "label": "当前硬件I²C地址",
+      "value": "0x68，7位地址，AD0接地",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "I²C支持速率",
+      "label": "I²C支持速率",
+      "value": "支持100kHz标准模式及400kHz快速模式；实际速率受总线条件约束",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "芯片FIFO容量",
+      "label": "芯片FIFO容量",
+      "value": "1024；需要驱动配置后使用",
+      "unit": "Byte",
+      "conditions": {}
+    },
+    {
+      "key": "INT中断引出状态",
+      "label": "INT中断引出状态",
+      "value": "当前原理图INT未连接外部接口",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_MPU6050_2026-10-12.pdf",
+      "sha256": "1806c3b00df3ba00f4e083bef593124e8982870cdb14d7ea97be52c26e59a73e"
+    }
+  ],
+  "driver_files": [
+    "modules/mpu6050/drivers/common/mpu6050.c",
+    "modules/mpu6050/drivers/common/mpu6050.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

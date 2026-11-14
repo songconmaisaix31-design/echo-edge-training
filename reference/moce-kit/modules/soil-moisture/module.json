@@ -1,0 +1,34 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "土壤湿度传感器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 19,
+  "role": "host_driver",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "未定位图纸；模拟/数字版本、供电、AO/DO 针号需确认，禁止套用光敏模块。",
+  "programming_facts_from_release": [
+    {
+      "key": "输出信号形式",
+      "label": "输出信号形式",
+      "value": "经板载检波和平滑处理的单路模拟电压输出",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "检波网络标称 RC 时间常数",
+      "label": "检波网络标称 RC 时间常数",
+      "value": "103.4",
+      "unit": "\tms",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [
+    "modules/soil-moisture/drivers/common/soil_moisture.c",
+    "modules/soil-moisture/drivers/common/soil_moisture.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

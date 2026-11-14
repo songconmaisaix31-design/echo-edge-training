@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "气压传感器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 37,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C；VCC 允许范围待确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心器件型号",
+      "label": "核心器件型号",
+      "value": "BMP388（TOKMAS），驱动及补偿算法按所附TOKMAS版本资料实现",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "气压测量范围",
+      "label": "气压测量范围",
+      "value": "300～1100",
+      "unit": "hPa",
+      "conditions": {}
+    },
+    {
+      "key": "当前I²C地址",
+      "label": "当前I²C地址",
+      "value": "0x76，7位地址；SDO在板上固定接地",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "原始数据格式",
+      "label": "原始数据格式",
+      "value": "压力、温度原始数据为24位二进制补码，需要符号扩展和补偿计算",
+      "unit": "bit",
+      "conditions": {}
+    },
+    {
+      "key": "数据补偿要求",
+      "label": "数据补偿要求",
+      "value": "读取器件校准系数，并使用与过采样配置对应的比例系数计算压力及温度",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "外部中断支持",
+      "label": "外部中断支持",
+      "value": "当前板卡未提供外部中断接口；SDO固定接地，不启用其输出功能",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_气压传感器模块_2026-10-12.pdf",
+      "sha256": "f89e6f7312d008c5a54192a9a6b6d3384633c72a131e79b9d61e3f324fc9a4a3"
+    }
+  ],
+  "driver_files": [
+    "modules/barometer/drivers/common/bmp388.c",
+    "modules/barometer/drivers/common/bmp388.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "红外传感 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 35,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "DO",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "DO 是模块输出，主控配置数字输入；有效电平以驱动/实测为准。",
+  "programming_facts_from_release": [
+    {
+      "key": "检测输出通道数",
+      "label": "检测输出通道数",
+      "value": "1",
+      "unit": "路",
+      "conditions": {}
+    },
+    {
+      "key": "阈值调节方式",
+      "label": "阈值调节方式",
+      "value": "10kΩ电位器R6产生参考电压，接比较器同相输入",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_红外传感器模块_2026-10-12.pdf",
+      "sha256": "78567c3a1c6e589afb0e7579596087704d8369b892794c501007f70bb3c3ef75"
+    }
+  ],
+  "driver_files": [
+    "modules/infrared/drivers/common/infrared_sensor.c",
+    "modules/infrared/drivers/common/infrared_sensor.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

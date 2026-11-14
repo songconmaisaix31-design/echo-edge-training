@@ -1,0 +1,51 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "九轴IMU模块V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 21,
+  "role": "host_driver",
+  "connector": "U4",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "额外 U3 为中断/复位排针，使用前单独核对；本表只给 I2C 主接口。",
+  "programming_facts_from_release": [
+    {
+      "key": "I²C 通信速率",
+      "label": "I²C 通信速率",
+      "value": "支持 100 / 400；",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "LSM6DS3TR-C 的 I²C 地址",
+      "label": "LSM6DS3TR-C 的 I²C 地址",
+      "value": "0x6A，7 位地址",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "IST8310 的 I²C 地址",
+      "label": "IST8310 的 I²C 地址",
+      "value": "0x0E，7 位地址",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_九轴IMU模块_2026-10-12.pdf",
+      "sha256": "091641cce55deea074e630adb0da71574744263f4902df5b8031c7dd8037bbd2"
+    }
+  ],
+  "driver_files": [
+    "modules/imu-9axis/drivers/common/imu9.c",
+    "modules/imu-9axis/drivers/common/imu9.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

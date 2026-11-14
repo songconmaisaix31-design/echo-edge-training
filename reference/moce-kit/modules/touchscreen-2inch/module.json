@@ -1,0 +1,103 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "触摸屏 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 33,
+  "role": "host_driver",
+  "connector": "U1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "BLK",
+    "3": "S_DAT",
+    "4": "S_RES",
+    "5": "S_CS",
+    "6": "S_CLK",
+    "7": "WR/DC",
+    "8": "T_RES",
+    "9": "T_SCL",
+    "10": "T_SDA",
+    "11": "T_INT",
+    "12": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "屏 SPI 与触摸 I2C 分别初始化；BLK/复位/IRQ 均需按 Board 的独立资源配置。",
+  "programming_facts_from_release": [
+    {
+      "key": "模块型号",
+      "label": "模块型号",
+      "value": "ZJY200K-IF05DCT",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "屏幕",
+      "label": "屏幕",
+      "value": "2.0 英寸 TFT LCD，带电容触摸（G+F）",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "分辨率",
+      "label": "分辨率",
+      "value": "240 × 320 RGB",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "显示颜色",
+      "label": "显示颜色",
+      "value": "262K",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "显示模式",
+      "label": "显示模式",
+      "value": "Normally Black",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "接口",
+      "label": "接口",
+      "value": "LCD：4 线 SPI 或 8-bit 8080 并口；触摸：I²C",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "LCD 驱动 IC",
+      "label": "LCD 驱动 IC",
+      "value": "ST7789P3",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "触摸驱动 IC",
+      "label": "触摸驱动 IC",
+      "value": "CST816D",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "背光",
+      "label": "背光",
+      "value": "3 颗白色 LED 并联；约 3.0V，典型 60mA、最大 90mA",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_触摸屏（2寸）_2026-10-12.pdf",
+      "sha256": "f805ebbe2a6109fe3648e26851631d208846ec14ab521a611bf435c1a28195e0"
+    }
+  ],
+  "driver_files": [
+    "modules/touchscreen-2inch/drivers/part-1/st7789.c",
+    "modules/touchscreen-2inch/drivers/part-1/st7789.h",
+    "modules/touchscreen-2inch/drivers/part-2/cst816d.c",
+    "modules/touchscreen-2inch/drivers/part-2/cst816d.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

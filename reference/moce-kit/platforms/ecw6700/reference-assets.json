@@ -1,0 +1,5 @@
+{
+  "Boards/ecw6700f/standalone/ref_bin/ecw6700_NV_Develop_0x3FB000_V3.0.0.bin": "2b631ab1366ec4a90e372076da9192bf76909eeaaea231d3274235e117dc61d5",
+  "Boards/ecw6700f/standalone/ref_bin/ECW6700_ota_status_0x3F0000_default_FF.bin": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+  "Boards/ecw6700f/standalone/ref_bin/ecw6700_Partition_Standalone_0x0_V3.0.5.bin": "adbf888acb8cb0ab4381e11227bba7acbe1f601cd010d738d9669cc6e3687b5f"
+}

@@ -1,0 +1,80 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "激光测距 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 44,
+  "role": "host_driver",
+  "connector": "U2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "图纸文件名写 VL53L0X，器件标注却为 VL53L4CDV0DH/1；驱动型号必须先与实物一致。额外 XSHUT/GPIO1 未纳入四针表。",
+  "programming_facts_from_release": [
+    {
+      "key": "设计采用的传感器型号",
+      "label": "设计采用的传感器型号",
+      "value": "VL53L4CDV0DH/1",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "默认I²C地址",
+      "label": "默认I²C地址",
+      "value": "7位地址0x29；写地址字节0x52、读地址字节0x53",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "器件支持的I²C最高速率",
+      "label": "器件支持的I²C最高速率",
+      "value": "最高1000；整板能否达到需满足总线时序和负载条件",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "最小线性测距距离",
+      "label": "最小线性测距距离",
+      "value": "1；不代表±1mm精度",
+      "unit": "mm",
+      "conditions": {}
+    },
+    {
+      "key": "最小线性测距距离",
+      "label": "器件最高测距频率",
+      "value": "最高100；不能与33ms时间预算下的性能数据直接合并",
+      "unit": "Hz",
+      "conditions": {}
+    },
+    {
+      "key": "校准要求",
+      "label": "校准要求",
+      "value": "所有应用需进行偏移校准；使用盖板时还需串扰校准",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "辅助接口装配状态",
+      "label": "辅助接口装配状态",
+      "value": "图中引出XSHUT、GPIO1、GND；连接器型号及实物装配待确认",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_VL53L0X激光测距模块_2026-10-12.pdf",
+      "sha256": "ad1b8edbecfb526773371f33c51496c09699552240a0f229ebb288b599dd4954"
+    }
+  ],
+  "driver_files": [
+    "modules/laser-ranging/drivers/common/vl53l4cd.c",
+    "modules/laser-ranging/drivers/common/vl53l4cd.h",
+    "modules/laser-ranging/drivers/common/vl53l4cd_defaults.inc"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

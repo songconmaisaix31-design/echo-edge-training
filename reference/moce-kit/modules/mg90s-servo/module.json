@@ -1,0 +1,45 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "MG90S舵机V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 16,
+  "role": "external_actuator",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "舵机本体无自有驱动；接舵机控制板。具体运动版本、线色/针号、脉宽和机械限位待确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "产品型号",
+      "label": "产品型号",
+      "value": "MG90S；",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "舵机控制类型",
+      "label": "舵机控制类型",
+      "value": "商家说明MG90S为模拟舵机，与MG90数字舵机区分",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "运动版本",
+      "label": "运动版本",
+      "value": "商家提供90°、180°及360°规格；其中360°描述为连续旋转，",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "控制死区",
+      "label": "控制死区",
+      "value": "商家表格标注5微秒，",
+      "unit": "μs",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

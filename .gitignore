@@ -33,3 +33,6 @@ DICOMDIR
 *.safetensors
 *.engine
 !/templates/儿童心超标注模板.xlsx
+
+# 参赛套件模块定义需要入库（默认规则忽略 *.json）
+!/reference/moce-kit/**/*.json

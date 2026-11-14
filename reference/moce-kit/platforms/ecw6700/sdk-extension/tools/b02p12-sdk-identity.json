@@ -1,0 +1,45 @@
+{
+  "baseline": "user-supplied ECW6700FSDK_V1.0.0B02P12; individually merged reviewed patches",
+  "files": {
+    "drivers/dma/dma.c": "ba71915889912970e4217873a903731362a37eafb6db5297c3b475e6081a119d",
+    "include/drivers/dma/dma.h": "0a76905bcc4e4759cadb52bd84e816f922c2a723e3d30321c484ef6e71e1fc5e",
+    "drivers/i2s/i2s_ll.c": "fb67d69b37bfdfa69706e20224c18c954acab4c489b90e8eb7426e28f44aa079",
+    "drivers/i2s/i2s_ll.h": "c9b58d745e57d5d954f30ac4755536fff6b2801df09fac255dad63218c12aad5",
+    "components/wpa/Makefile": "0ee36a7f66d0e6182d6297e38fbb2a794a815eb24a4dcdc87812852b569afaf6",
+    "components/sntp/Makefile": "10ef97bb444602ad4935399c6a3a9f8e9470794e940ea230b109b6e3ad0d8608",
+    "Boards/ecw6700f/makefile": "d76ba01504d6153a9a168b251bbf6e7b25bb2c83dca8448f1eda2398447376f7",
+    "Boards/ecw6700f/common/chip_clk_ctrl.c": "43990b5129df4204c336ef9d265c93dab6083df92e5e28785b5197f802498def",
+    "Boards/ecw6700f/common/include/chip_clk_ctrl.h": "148cf9ea6c3367a0adf6cb411f2b58b44a066a50abd5abcabe4c4a8164b2954c",
+    "Boards/ecw6700f/common/include/rom_ld.h": "8c311107e230e6289d89c7bbe059371a0d89205ab3c69ffddb12f649e66b4130",
+    "os/freertos/FreeRTOS-Kernel/portable/GCC/RISCV_E315/non_secure/port.c": "23117b1742c54395a81a716c395245748762b72108cda1f35fed77b8fe89c641",
+    "components/wifi_ctrl/system_wifi.c": "b3656472499d1a5ccc77a9b2ccb317709dc516242d88bdf2ba4a76d59ae9ef1b",
+    "components/wpa/wpa_supplicant/wpas_cntrl_api.c": "3265ace624f62e8759a3af3bba5a099f0556b8746059b85e7fc379564e30aa1e",
+    "components/wpa/wpa_supplicant/wpas_cntrl_api.h": "e8670e0fccc9c40793f69a0e7b2fb3a483216485f1424d9b4507e7f97bef243f",
+    "components/wpa/wpa_supplicant/wpas_struct_iface.c": "aa880fe7f8ce46b6158ed3ebd0e6f2380a6d28ad83ff4b49de1ec0ae58034daa",
+    "components/wpa/wpa_supplicant/wpas_struct_iface.h": "7f068672b0fba2b450ab07ba6b9a2b0756382d6b27924811fa22d72492495a8b",
+    "include/components/wifi_crtl/system_wifi.h": "777a6bcae85e216eaf44151b42ef80d99d4f2e0129d46c05dc53c68527dba5f5",
+    "include/drivers/spi/spi.h": "e21c170492a9a225f64493b413331e70e62546777f4560a7b5f8cbfe9bc6cbfa",
+    "drivers/spi/spi_internal.h": "ddc7d745f96a21ad7b2269af59fda51ec68d277129f1bea7e949967b6f438d63",
+    "include/os/oshal.h": "7cdbd7413a450064a3d28c810abdc5bd6b03401c61bef69313cfe03c1206d6a1",
+    "Boards/ecw6700f/common/include/chip_memmap.h": "108082114aa899248f4177e26c3df9fb0647914b3dffaab01f1fe78ca4b192b5",
+    "drivers/pit/pit_timer.c": "9b9799532c58555943369c35dc34c055b026bdfc1ef047c3fbd1a101a690a823",
+    "drivers/pit/pit_common.c": "bed0a797cb40583c9b5c9efa2396ebc10e2d89144fc423b1150bdd7aea4eea04",
+    "include/drivers/pit/pit_timer.h": "7e8b149c597c8f0c31b84ba2f33b4f260e25a710735e5c49d2a91b744248997f",
+    "os/freertos/FreeRTOS-Kernel/portable/MemMang/freertos_heap/heap_5.c": "d2312e3052b339a1d8135fb5468432b5136d32510f37799e7ad5fb338a74f45b"
+  },
+  "gatt_files": {
+    "components/ble/nimble/nimble/host/services/gap/src/ble_svc_gap.c": "4a14c47c79521c22dfe8cb0324bdfbb2877f44656cb3dd9304caaba36d15e07b",
+    "components/ble/nimble/nimble/host/services/gap/include/services/gap/ble_svc_gap.h": "abe4e778e3a2a65b7e965e21ff8c197759410b993ca0e063fec72df403a2337e",
+    "components/ble/nimble/nimble/host/services/gatt/src/ble_svc_gatt.c": "cd5e524aaefc875ccd5914a99e648838b1326a61048e99ae69b4a8019a2a0a80",
+    "components/ble/nimble/nimble/host/services/gatt/include/services/gatt/ble_svc_gatt.h": "5c00089afd1da17700b0db10e9dcaa18bc3250e9187ee3bad16f7a7ac7dfbf98"
+  },
+  "board_build_files": {
+    "Boards/makefile": "29c11e378840a462a79100fb6069c3872a5970e4675d80ea4e89c634a1177bec"
+  },
+  "adc_files": {
+    "drivers/adc/aux_adc.c": "729ead59881bbc4e32fa4c9dfe7b144cc0d8823331d3fcfdcabfec69f5ae72a1",
+    "drivers/adc/aux_adc_common.c": "dd4fa539504efd1a8fb77f5f355585b5f2bade303f136659a8172b2c649b057f",
+    "include/drivers/adc/moce_adc_checked.h": "e94684d7de5e3caf0435d2b7cbf9bb869a9df872d839d5bb6bc0ee1007b989ec"
+  },
+  "archive_sha256": "084618cdb6ab6f9c014e683fafff4ae82c3b77d3f424018a8d0e5604aa1c229c"
+}

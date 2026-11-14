@@ -1,0 +1,24 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "功率开关 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 14,
+  "role": "no_software_interface",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "未定位对应模块图；负载额定值、供电及控制极性待确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "控制方式",
+      "label": "控制方式",
+      "value": "板载 U4 手动开关控制",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

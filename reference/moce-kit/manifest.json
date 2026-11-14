@@ -1,0 +1,32 @@
+{
+  "schema": "moce.contestant-kit/v1",
+  "version": "1.0.0-alpha.1",
+  "date": "2026-11-14",
+  "input_module_count": 39,
+  "module_directories": 36,
+  "application_examples": 0,
+  "platforms": [
+    "STM32F407VET6",
+    "ECW6700F"
+  ],
+  "boards": [
+    "F407 mainboard",
+    "F407 expansion-20260915",
+    "ECW 2ADC"
+  ],
+  "bsp_api": "1.0.0-alpha.1",
+  "source_revisions": {
+    "f407": "1.0.0-alpha.1+integration.20261111.1",
+    "ecw6700": "1.0.0-alpha.1+audiofix.20261112.1"
+  },
+  "driver_policy": "byte-identical to supplied release; no application source included",
+  "status": "candidate; see VALIDATION.md",
+  "validation": {
+    "base_firmware_links": {
+      "stm32f407": "passed",
+      "ecw6700": "passed"
+    },
+    "driver_compile": "see driver-build-status.json",
+    "hardware": "not_performed"
+  }
+}

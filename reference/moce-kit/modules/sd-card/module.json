@@ -1,0 +1,46 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "SD 卡V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 50,
+  "role": "host_driver",
+  "connector": "U1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "CS",
+    "3": "SCLK",
+    "4": "MISO",
+    "5": "MOSI",
+    "6": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "3.3V SPI；随包驱动是裸扇区层，不包含 FAT 文件系统。",
+  "programming_facts_from_release": [
+    {
+      "key": "板级接口方式",
+      "label": "板级接口方式",
+      "value": "SPI方式；引出CS、SCLK、MISO、MOSI；未引出DAT1、DAT2",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "独立卡检测信号",
+      "label": "独立卡检测信号",
+      "value": "卡座独立CD触点未引出至主控连接器，不能提供独立硬件插卡检测线",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_SD卡模块_2026-10-12.pdf",
+      "sha256": "d58fb194e1b5509e3db557d5108945d293433a2de3a264bdc5fd4d80f161a342"
+    }
+  ],
+  "driver_files": [
+    "modules/sd-card/drivers/common/sd_card_spi_driver.c",
+    "modules/sd-card/drivers/common/sd_card_spi_driver.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

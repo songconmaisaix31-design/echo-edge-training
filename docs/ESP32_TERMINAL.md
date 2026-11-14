@@ -4,9 +4,26 @@
 
 ## 当前状态
 
-已在 Windows 使用 `CH343 (COM4)` 连接终端。按 `115200` 波特监听 10 秒，收到 10 行循环输出 `50%R`、`50%G`、`50%B`。现有固件已能输出串口日志，待取得其工程目录和外设接线。通过模组丝印或启动日志确认 8 MB 是 Flash 还是 PSRAM。 [Espressif 模组配置](https://docs.espressif.com/projects/esp-idf/en/v5.2.1/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html)
+**固件已接管，OLED 已点亮，ECW6700 桥已通。温湿度与语音仍未上线。**
 
-重新连接后，用 PowerShell 的 `[System.IO.Ports.SerialPort]::GetPortNames()` 确认端口，再用串口监视器按 `115200` 波特、8N1 复查固件输出。
+接管前终端跑的是出厂固件，串口按 `115200` 波特循环输出 `50%R` / `50%G` / `50%B`（三路通道占空比），
+只有日志、没有业务逻辑。现在已换成仓库内的自建固件，工程、构建命令、接线全部落地：
+
+| 项 | 结论 | 详见 |
+| --- | --- | --- |
+| 主控 | ESP32-S3-DevKitC-1 **N16R8**（16 MB Flash / 8 MB Octal PSRAM），板载 CH343 → `COM4` | [hardware-facts](firmware/hardware-facts.md) |
+| OLED | SSD1306 128×64，I²C **0x3C**，`SDA=GPIO41` / `SCL=GPIO42`，3.3 V 供电 | [firmware/oled-test](../firmware/oled-test/) |
+| 当前固件 | `ecw-hud`：ECW 桥 + 状态屏二合一，屏上实时显示链路与总线状态 | [firmware/ecw-hud](../firmware/ecw-hud/) |
+| ECW6700 | UART 115200 8N1，TX→`GPIO18`、RX→`GPIO17`，电池供电不接 3V3，命令须 `\r` 结尾 | [hardware-facts](firmware/hardware-facts.md) |
+| 固件更新 | 走 WiFi OTA（`ota service_ota_start <url>`），安全启动未启用故不校验签名，无需进下载模式 | 同上 |
+| 温湿度 | GXHT30C @ `0x44` **无应答**，总线本身健康 → 器件侧问题（官方注明 pin2/pin3 反接） | [pitfalls](firmware/pitfalls.md) |
+| 语音 | SYN6288E 帧已能发到线上，但零回传，无法区分 TX 空焊 / 接线错 / 没供电 | [pitfalls](firmware/pitfalls.md) |
+
+排查过程与全部踩坑记录见 [firmware/pitfalls.md](firmware/pitfalls.md)。
+
+> 端口确认：PowerShell `[System.IO.Ports.SerialPort]::GetPortNames()`，或
+> `python -c "import serial.tools.list_ports as p; print([x.device for x in p.comports()])"`。
+> 认准 VID `1A86` PID `55D3`（CH343）；别和 ECW 调试板的 CH340（`1A86:7523`，`COM3`）搞混。
 
 ## 开发任务
 

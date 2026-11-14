@@ -1,0 +1,38 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "I2C转接板 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 23,
+  "role": "passive_bus_adapter",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "无源转接；未定位对应图纸，需确认各路直通关系、供电轨及总线上拉并联值。",
+  "programming_facts_from_release": [
+    {
+      "key": "平级 I²C 扩展接口数量",
+      "label": "平级 I²C 扩展接口数量",
+      "value": 5,
+      "unit": "个",
+      "conditions": {}
+    },
+    {
+      "key": "I²C总线连接方式",
+      "label": "I²C总线连接方式",
+      "value": "五个平级接口的 SCL、SDA、电源和公共地分别直接并联，无固定入口或出口",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "正常工作最少连接接口数",
+      "label": "正常工作最少连接接口数",
+      "value": 2,
+      "unit": "个不同物理接口",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

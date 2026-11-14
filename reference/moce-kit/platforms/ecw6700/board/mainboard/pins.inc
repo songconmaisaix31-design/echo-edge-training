@@ -1,0 +1,14 @@
+static const uint8_t pins_GPIO_0[] = {5};
+static const uint8_t pins_GPIO_1[] = {4};
+static const uint8_t pins_GPIO_2[] = {0};
+static const uint8_t pins_GPIO_3[] = {1};
+static const uint8_t pins_GPIO_4[] = {11};
+static const uint8_t pins_I2C_0[] = {24, 23};
+static const uint8_t pins_UART_0[] = {17, 2};
+static const uint8_t pins_UART_1[] = {9, 10};
+static const uint8_t pins_PWM_0[] = {15, 16};
+static const uint8_t pins_PWM_1[] = {22};
+static const uint8_t pins_PWM_2[] = {21};
+static const uint8_t pins_SPI_0[] = {14, 12, 13};
+static const uint8_t pins_I2S_0[] = {6, 7, 8, 3};
+static const uint8_t pins_ADC_0[] = {19, 20};

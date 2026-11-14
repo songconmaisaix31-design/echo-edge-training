@@ -1,0 +1,79 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "矩阵键盘 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 30,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C 键盘，不是直接扫描裸矩阵引脚。",
+  "programming_facts_from_release": [
+    {
+      "key": "扫描控制芯片",
+      "label": "扫描控制芯片",
+      "value": "TM1650-SOP16-TA1809D",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "实体按键数量",
+      "label": "实体按键数量",
+      "value": "16",
+      "unit": "个",
+      "conditions": {}
+    },
+    {
+      "key": "按键矩阵结构",
+      "label": "按键矩阵结构",
+      "value": "4×4；ROW接DIG1～DIG4，COL接KI1～KI4",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "键码数据格式",
+      "label": "键码数据格式",
+      "value": "8位，MSB先传；P6为按下／释放状态位",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "按键读取命令",
+      "label": "按键读取命令",
+      "value": "0x4F，为手册定义的线上命令字节，不直接作为7位I²C地址填写",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "扫描使能要求",
+      "label": "扫描使能要求",
+      "value": "读键前必须处于手册规定的开显示扫描状态",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "多键处理规则",
+      "label": "多键处理规则",
+      "value": "支持特定KI1＋KI2组合；其他多键按优先级处理，不是任意多键无冲",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_矩阵键盘模块_2026-10-12.pdf",
+      "sha256": "3a27ddc35e9f1a07198e182c9bde0d5d345812008220ea142dc8c1f6e98e7a37"
+    }
+  ],
+  "driver_files": [
+    "modules/matrix-keypad/drivers/common/tm1650.c",
+    "modules/matrix-keypad/drivers/common/tm1650.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

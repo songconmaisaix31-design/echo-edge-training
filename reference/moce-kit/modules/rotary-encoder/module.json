@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "旋转编码器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 38,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "DO1",
+    "3": "DO2",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "数字 A/B 输入；VCC 范围待确认；未引出的按键不作为可用接口。",
+  "programming_facts_from_release": [
+    {
+      "key": "编码器型号",
+      "label": "编码器型号",
+      "value": "EC12E24204A8",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "编码方式",
+      "label": "编码方式",
+      "value": "机械接触式增量编码，A/B两相输出",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "每圈脉冲数",
+      "label": "每圈脉冲数",
+      "value": "24，不等同于倍频解码后的软件计数",
+      "unit": "脉冲/圈",
+      "conditions": {}
+    },
+    {
+      "key": "每圈定位点数",
+      "label": "每圈定位点数",
+      "value": "24",
+      "unit": "个/圈",
+      "conditions": {}
+    },
+    {
+      "key": "相位与引脚关系",
+      "label": "相位与引脚关系",
+      "value": "A→DO1，B→DO2，公共端C接地",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "按压输出支持",
+      "label": "按压输出支持",
+      "value": "当前模块无按压输出；图中D/E未连接",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_旋转编码器模块_2026-10-12.pdf",
+      "sha256": "b7ee66cad9764ba7e5290b1a676d3b6383e777de865fe72736cb56994f675b72"
+    }
+  ],
+  "driver_files": [
+    "modules/rotary-encoder/drivers/common/rotary_encoder.c",
+    "modules/rotary-encoder/drivers/common/rotary_encoder.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

@@ -1,0 +1,57 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "触摸按键 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 34,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "DO/SIG",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "模块输出接主控数字输入；确认触摸开关的有效电平和上电稳定时间。",
+  "programming_facts_from_release": [
+    {
+      "key": "触摸检测芯片",
+      "label": "触摸检测芯片",
+      "value": "TTP223-TD，单键电容式触摸检测",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "触摸通道数",
+      "label": "触摸通道数",
+      "value": "1",
+      "unit": "路",
+      "conditions": {}
+    },
+    {
+      "key": "输出形式",
+      "label": "输出形式",
+      "value": "芯片OUT为推挽数字输出，经R1 22Ω连接DO/SIG",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "输出模式配置",
+      "label": "输出模式配置",
+      "value": "STG、SLH由SW2配置，用于选择跟随或翻转模式，以及有效电平或上电初始状态；实际拨码位置需记录",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_触摸按键模块_2026-10-12.pdf",
+      "sha256": "71f82fc819ef87f3107307a2e04795ad58ae1f5322ba29530c60d8cc7263b700"
+    }
+  ],
+  "driver_files": [
+    "modules/touch-button/drivers/common/touch_key.c",
+    "modules/touch-button/drivers/common/touch_key.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

@@ -1,0 +1,401 @@
+{
+  "scope": "real target object compilation only; no module final link or hardware acceptance",
+  "totals": {
+    "stm32f407": {
+      "objects": 32,
+      "pass": 31,
+      "fail": 1
+    },
+    "ecw6700": {
+      "objects": 32,
+      "pass": 32,
+      "fail": 0
+    }
+  },
+  "files": [
+    {
+      "platform": "stm32f407",
+      "module": "air-quality",
+      "source": "modules/air-quality/drivers/common/ags02ma.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "air-quality",
+      "source": "modules/air-quality/drivers/common/ags02ma.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "barometer",
+      "source": "modules/barometer/drivers/common/bmp388.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "barometer",
+      "source": "modules/barometer/drivers/common/bmp388.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "brushed-dc-driver",
+      "source": "modules/brushed-dc-driver/drivers/common/tb6612.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "brushed-dc-driver",
+      "source": "modules/brushed-dc-driver/drivers/common/tb6612.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "color-sensor",
+      "source": "modules/color-sensor/drivers/common/veml6040.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "color-sensor",
+      "source": "modules/color-sensor/drivers/common/veml6040.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "epaper-42",
+      "source": "modules/epaper-42/drivers/common/epd0426.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "epaper-42",
+      "source": "modules/epaper-42/drivers/common/epd0426_graphics.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "epaper-42",
+      "source": "modules/epaper-42/drivers/common/epd0426.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "epaper-42",
+      "source": "modules/epaper-42/drivers/common/epd0426_graphics.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "fan",
+      "source": "modules/fan/drivers/common/fan_pwm.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "fan",
+      "source": "modules/fan/drivers/common/fan_pwm.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "fingerprint",
+      "source": "modules/fingerprint/drivers/common/zw83080.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "fingerprint",
+      "source": "modules/fingerprint/drivers/common/zw83080.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "imu-9axis",
+      "source": "modules/imu-9axis/drivers/common/imu9.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "imu-9axis",
+      "source": "modules/imu-9axis/drivers/common/imu9.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "infrared",
+      "source": "modules/infrared/drivers/common/infrared_sensor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "infrared",
+      "source": "modules/infrared/drivers/common/infrared_sensor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "joystick",
+      "source": "modules/joystick/drivers/common/joystick.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "joystick",
+      "source": "modules/joystick/drivers/common/joystick.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "laser-ranging",
+      "source": "modules/laser-ranging/drivers/common/vl53l4cd.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "laser-ranging",
+      "source": "modules/laser-ranging/drivers/common/vl53l4cd.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "matrix-keypad",
+      "source": "modules/matrix-keypad/drivers/common/tm1650.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "matrix-keypad",
+      "source": "modules/matrix-keypad/drivers/common/tm1650.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "mg90-servo-controller",
+      "source": "modules/mg90-servo-controller/drivers/common/rc_servo.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "mg90-servo-controller",
+      "source": "modules/mg90-servo-controller/drivers/common/rc_servo.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "microphone",
+      "source": "modules/microphone/drivers/common/msm261dgt003.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "microphone",
+      "source": "modules/microphone/drivers/common/msm261dgt003.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "mpu6050",
+      "source": "modules/mpu6050/drivers/common/mpu6050.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "mpu6050",
+      "source": "modules/mpu6050/drivers/common/mpu6050.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "oled-096",
+      "source": "modules/oled-096/drivers/common/ssd1306.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "oled-096",
+      "source": "modules/oled-096/drivers/common/ssd1306.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "photoresistor",
+      "source": "modules/photoresistor/drivers/common/gl5506.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "photoresistor",
+      "source": "modules/photoresistor/drivers/common/gl5506.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "rotary-encoder",
+      "source": "modules/rotary-encoder/drivers/common/rotary_encoder.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "rotary-encoder",
+      "source": "modules/rotary-encoder/drivers/common/rotary_encoder.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "rtc",
+      "source": "modules/rtc/drivers/common/rv3028.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "rtc",
+      "source": "modules/rtc/drivers/common/rv3028.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "sd-card",
+      "source": "modules/sd-card/drivers/common/sd_card_spi_driver.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "sd-card",
+      "source": "modules/sd-card/drivers/common/sd_card_spi_driver.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "soil-moisture",
+      "source": "modules/soil-moisture/drivers/common/soil_moisture.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "soil-moisture",
+      "source": "modules/soil-moisture/drivers/common/soil_moisture.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "speaker-amplifier",
+      "source": "modules/speaker-amplifier/drivers/common/max98357a.c",
+      "exit_code": 1
+    },
+    {
+      "platform": "ecw6700",
+      "module": "speaker-amplifier",
+      "source": "modules/speaker-amplifier/drivers/common/max98357a.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "temperature-humidity",
+      "source": "modules/temperature-humidity/drivers/common/gxht30c.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "temperature-humidity",
+      "source": "modules/temperature-humidity/drivers/common/gxht30c.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "text-to-speech",
+      "source": "modules/text-to-speech/drivers/common/syn6288e.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "text-to-speech",
+      "source": "modules/text-to-speech/drivers/common/syn6288e.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "thermistor",
+      "source": "modules/thermistor/drivers/common/ntc_thermistor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "thermistor",
+      "source": "modules/thermistor/drivers/common/ntc_thermistor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "touch-button",
+      "source": "modules/touch-button/drivers/common/touch_key.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "touch-button",
+      "source": "modules/touch-button/drivers/common/touch_key.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "touchscreen-2inch",
+      "source": "modules/touchscreen-2inch/drivers/part-1/st7789.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "touchscreen-2inch",
+      "source": "modules/touchscreen-2inch/drivers/part-2/cst816d.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "touchscreen-2inch",
+      "source": "modules/touchscreen-2inch/drivers/part-1/st7789.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "touchscreen-2inch",
+      "source": "modules/touchscreen-2inch/drivers/part-2/cst816d.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "vibration-motor",
+      "source": "modules/vibration-motor/drivers/common/vibration_motor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "vibration-motor",
+      "source": "modules/vibration-motor/drivers/common/vibration_motor.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "water-level",
+      "source": "modules/water-level/drivers/common/sc01b.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "water-level",
+      "source": "modules/water-level/drivers/common/sc01b.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "stm32f407",
+      "module": "ws2812-led-panel",
+      "source": "modules/ws2812-led-panel/drivers/common/ws2812b_do_dma.c",
+      "exit_code": 0
+    },
+    {
+      "platform": "ecw6700",
+      "module": "ws2812-led-panel",
+      "source": "modules/ws2812-led-panel/drivers/common/ws2812b_do_dma.c",
+      "exit_code": 0
+    }
+  ]
+}

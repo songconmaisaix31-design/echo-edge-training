@@ -1,0 +1,31 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "TT双轴直流减速电机V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 37,
+  "role": "external_actuator",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "电机本体经匹配驱动板供电；不能直接接 MCU IO。额定电压、堵转电流与编码器版本待确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "减速比",
+      "label": "减速比",
+      "value": "商家标注1∶48，即约48∶1减速",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "输出轴结构",
+      "label": "输出轴结构",
+      "value": "双侧出轴，同一减速机构，不支持独立控制",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

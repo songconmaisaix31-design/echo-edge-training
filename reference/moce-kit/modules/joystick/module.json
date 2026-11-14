@@ -1,0 +1,66 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "摇杆 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 33,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "AO1",
+    "3": "AO2",
+    "4": "DO",
+    "5": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "双 ADC 加按键输入；VCC 范围待确认，AO 不得超过主控 ADC 范围。",
+  "programming_facts_from_release": [
+    {
+      "key": "输入通道组成",
+      "label": "输入通道组成",
+      "value": "两轴模拟位置输入＋一路按压开关",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "按键有效电平",
+      "label": "按键有效电平",
+      "value": "按下低，释放高",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "回中机制",
+      "label": "回中机制",
+      "value": "松手后机械回中，中心值需校准",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "回中输出范围",
+      "label": "回中输出范围",
+      "value": "手册5V测试条件下为供电的41%～59%；不是中心精确50%",
+      "unit": "%",
+      "conditions": {}
+    },
+    {
+      "key": "轴方向映射",
+      "label": "轴方向映射",
+      "value": "AO1、AO2对",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_摇杆模块_2026-10-12.pdf",
+      "sha256": "7a765bc99f0148a4c3cd01623aac46a6e5aea4768e62457c5b4a4d2f638b5cba"
+    }
+  ],
+  "driver_files": [
+    "modules/joystick/drivers/common/joystick.c",
+    "modules/joystick/drivers/common/joystick.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

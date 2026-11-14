@@ -1,0 +1,12 @@
+{
+  "windows": {
+    "filename": "moce-ecw-windows-tools-14.1.1-clean1-20261114.tar.gz",
+    "bytes": 310853454,
+    "sha256": "e5bcd8375daa997be003d120bde906761f306fa81782e1aa7919e50498298f37",
+    "files": 12396,
+    "kind": "optional tools-only, no SDK/BSP/project context",
+    "uploaded": false
+  },
+  "distribution": "由主办方单独发放此同名附件；当前未上传，不提供历史完整仓库工具归档链接。",
+  "linux": "参见downloads.json的原厂固定编译器URL；本轮未验证Linux工程。"
+}

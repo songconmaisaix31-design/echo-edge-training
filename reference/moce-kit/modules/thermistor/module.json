@@ -1,0 +1,92 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "热敏电阻  V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 42,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "AO",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "AO 接 ADC；温度换算需要与热敏型号、分压参数一致。",
+  "programming_facts_from_release": [
+    {
+      "key": "热敏电阻型号",
+      "label": "热敏电阻型号",
+      "value": "MF52A103F3950(A1)",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "25℃零功率阻值",
+      "label": "25℃零功率阻值",
+      "value": "10，容差±1%；规格书测试功率≤0.1mW",
+      "unit": "kΩ",
+      "conditions": {}
+    },
+    {
+      "key": "B25/50值",
+      "label": "B25/50值",
+      "value": "3950，容差±1%",
+      "unit": "K",
+      "conditions": {}
+    },
+    {
+      "key": "固定分压电阻",
+      "label": "固定分压电阻",
+      "value": "10kΩ；",
+      "unit": "kΩ",
+      "conditions": {}
+    },
+    {
+      "key": "温度与输出趋势",
+      "label": "温度与输出趋势",
+      "value": "度升高→NTC阻值下降→AO电压下降",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "25℃标称输出电压",
+      "label": "25℃标称输出电压",
+      "value": "约1.65；3.3V供电、两只分压电阻均取标称10kΩ、输出负载可忽略",
+      "unit": "V",
+      "conditions": {}
+    },
+    {
+      "key": "NTC热时间常数",
+      "label": "NTC热时间常数",
+      "value": "静止空气中约12；",
+      "unit": "s",
+      "conditions": {}
+    },
+    {
+      "key": "温度换算依据",
+      "label": "温度换算依据",
+      "value": "由分压计算阻值，再采用厂家阻温表插值或适用的模型换算；精度需校准验证",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "整板测温精度",
+      "label": "整板测温精度",
+      "value": "尚未实测，不以NTC阻值容差代替整板温度误差",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_热敏电阻模块_2026-10-12.pdf",
+      "sha256": "25dc91a8bdadd5c20f50afb5803ea9e6e90cf762b25ccf92bbd6b8316e01be4a"
+    }
+  ],
+  "driver_files": [
+    "modules/thermistor/drivers/common/ntc_thermistor.c",
+    "modules/thermistor/drivers/common/ntc_thermistor.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

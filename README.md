@@ -2,6 +2,8 @@
 
 RTX 5060 电脑负责心超影像解码、MobileNetV3-Small 切面与采集质量模型的训练和推理。ESP32-S3 负责外设采集、OLED 显示、语音和振动提示，以及台架上的舵机控制。终端接线、开发顺序和实机验收见 [ESP32-S3 终端方案与任务](docs/ESP32_TERMINAL.md)。
 
+终端固件源码、构建与烧录命令见 [firmware/](firmware/README.md)；排查记录与踩过的坑见 [docs/firmware/pitfalls.md](docs/firmware/pitfalls.md)，硬件关键事实（引脚禁区、I²C 地址、ECW 寄存器）见 [docs/firmware/hardware-facts.md](docs/firmware/hardware-facts.md)。厂商参赛套件的模块定义收在 [reference/moce-kit/](reference/README.md)。
+
 ## 模型开发任务
 
 - [#7 回收团队标注并通过数据预检](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)

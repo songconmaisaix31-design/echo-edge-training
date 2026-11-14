@@ -1,0 +1,79 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "温湿度传感器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 40,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "冲突：图线 SCL / 文字 SDA",
+    "3": "冲突：图线 SDA / 文字 SCL",
+    "4": "GND"
+  },
+  "connection_status": "blocked",
+  "notes": "禁止直接按表通电通信：图纸文字与网标互换，须连续性测量实物 pin2/pin3 并由供货方冻结线序。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心器件型号",
+      "label": "核心器件型号",
+      "value": "GXHT30C，带不可揭除的防尘透气膜",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "I²C地址",
+      "label": "I²C地址",
+      "value": "0x44，7位地址，ADDR接地",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "温度测量范围",
+      "label": "温度测量范围",
+      "value": "−45～130，",
+      "unit": "℃",
+      "conditions": {}
+    },
+    {
+      "key": "相对湿度测量范围0",
+      "label": "相对湿度测量范围",
+      "value": "0～100，",
+      "unit": "%RH",
+      "conditions": {}
+    },
+    {
+      "key": "I²C速率能力",
+      "label": "I²C速率能力",
+      "value": "芯片支持最高1MHz；整板可用速率需结合总线电容、线长及上拉验证",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "CRC算法",
+      "label": "CRC算法",
+      "value": "CRC-8，多项式0x31，初值0xFF，不反射，最终异或0x00；校验前面的两字节数据",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "外部辅助信号",
+      "label": "外部辅助信号",
+      "value": "ALERT、nRESET未引出，不声明硬件报警输出和外部复位接口",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_温湿度传感器模块_2026-10-12.pdf",
+      "sha256": "349785ace43e8fa93bdbb41b7c18f2dc4e4bab2e0c235bc79bff0e36850b7f8b"
+    }
+  ],
+  "driver_files": [
+    "modules/temperature-humidity/drivers/common/gxht30c.c",
+    "modules/temperature-humidity/drivers/common/gxht30c.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

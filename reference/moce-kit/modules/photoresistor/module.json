@@ -1,0 +1,64 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "光敏电阻 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 33,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "AO",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "3.3V；AO 接 ADC；lux 是未标定估算，不能当计量数据。",
+  "programming_facts_from_release": [
+    {
+      "key": "光敏电阻型号",
+      "label": "光敏电阻型号",
+      "value": "GL5506（4～7kΩ）",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "模拟输出通道数",
+      "label": "模拟输出通道数",
+      "value": "1",
+      "unit": "路",
+      "conditions": {}
+    },
+    {
+      "key": "分压上拉电阻",
+      "label": "分压上拉电阻",
+      "value": "10",
+      "unit": "kΩ",
+      "conditions": {}
+    },
+    {
+      "key": "光照与输出变化方向",
+      "label": "光照与输出变化方向",
+      "value": "相同供电和负载条件下，光照增强时AO电压下降，光照减弱时升高",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "响应时间（器件）",
+      "label": "响应时间（器件）",
+      "value": "手册列示上升30ms、下降30ms；不作为整板最大响应时间保证",
+      "unit": "ms",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_光敏电阻模块_2026-10-12.pdf",
+      "sha256": "3b0386dc1cdf30d0629e4ddf584fbc2ad20b1b110c770dea089126d077f933be"
+    }
+  ],
+  "driver_files": [
+    "modules/photoresistor/drivers/common/gl5506.c",
+    "modules/photoresistor/drivers/common/gl5506.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

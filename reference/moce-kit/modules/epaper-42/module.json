@@ -1,0 +1,85 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "4.2寸墨水屏 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 46,
+  "role": "host_driver",
+  "connector": "U1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "BUSY",
+    "3": "RES",
+    "4": "DC",
+    "5": "CS",
+    "6": "SCK",
+    "7": "MOSI",
+    "8": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "SPI 写入；BUSY 为模块输出；分辨率/控制器和初始化参数以实际屏批次核对。",
+  "programming_facts_from_release": [
+    {
+      "key": "配套面板型号",
+      "label": "配套面板型号",
+      "value": "GDEY0426T82；",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "显示控制器",
+      "label": "显示控制器",
+      "value": "SSD1677",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "面板对角线尺寸",
+      "label": "面板对角线尺寸",
+      "value": "4.26",
+      "unit": "英寸",
+      "conditions": {}
+    },
+    {
+      "key": "显示分辨率",
+      "label": "显示分辨率",
+      "value": "800×480",
+      "unit": "像素",
+      "conditions": {}
+    },
+    {
+      "key": "显示颜色",
+      "label": "显示颜色",
+      "value": "黑白",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "BUSY有效电平",
+      "label": "BUSY有效电平",
+      "value": "高电平表示忙",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "复位有效电平",
+      "label": "复位有效电平",
+      "value": "RES#低电平有效",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_4.2寸墨水屏_2026-10-12.pdf",
+      "sha256": "2df6d04445694fcb264cbf134838d99a56ca516b3cc1eed1022d2354b376101c"
+    }
+  ],
+  "driver_files": [
+    "modules/epaper-42/drivers/common/epd0426.c",
+    "modules/epaper-42/drivers/common/epd0426.h",
+    "modules/epaper-42/drivers/common/epd0426_graphics.c",
+    "modules/epaper-42/drivers/common/epd0426_graphics.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

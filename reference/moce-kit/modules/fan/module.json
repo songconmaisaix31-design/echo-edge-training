@@ -1,0 +1,27 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "风扇模块V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 11,
+  "role": "host_driver",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "当前两批图纸中未定位对应模块；禁止按通用三针线序猜供电和控制极性。",
+  "programming_facts_from_release": [
+    {
+      "key": "产品型号",
+      "label": "产品型号",
+      "value": "W12T12BS1M7-20Z041",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [
+    "modules/fan/drivers/common/fan_pwm.c",
+    "modules/fan/drivers/common/fan_pwm.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

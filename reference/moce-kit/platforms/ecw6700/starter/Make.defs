@@ -1,0 +1,16 @@
+BSP_ECW_ROOT := ecw6700f/APP_PLACEHOLDER/integration/bsp
+BSP_ECW_SDK_ROOT := $(TOPDIR)
+BSP_ECW_SDK_BASELINE := B02P12
+BSP_ECW_ENABLE_I2S := 0
+BSP_ECW_ENABLE_DMA := 0
+BSP_ECW_ENABLE_RADIO := 0
+BSP_ECW_SYSTEM_EXTENSIONS := 0
+BSP_ECW_I2S_LL_PROVIDED := 1
+BSP_ECW_ISOLATE_BOARD_OBJECTS := 1
+BSP_ECW_ADC_CHECKED := 1
+include $(BOARD_DIR)/integration/bsp/bsp_sources.mk
+MOCE_SHEILD := none
+include $(BOARD_DIR)/integration/board/selection.mk
+CSRCS += config.c application.c startup.c rf_cal_config.c board.c
+VPATH += :ecw6700f/APP_PLACEHOLDER:ecw6700f/APP_PLACEHOLDER/integration/board
+INCPATHS += ecw6700f/APP_PLACEHOLDER ecw6700f/APP_PLACEHOLDER/integration/board

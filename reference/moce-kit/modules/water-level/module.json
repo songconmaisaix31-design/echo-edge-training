@@ -1,0 +1,71 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "水位传感器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 51,
+  "role": "host_driver",
+  "connector": "CN1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "OUT/DO",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "第二批图纸为数字输出版；旧模拟水位驱动/ADC 换算不能直接用于本版本，需新增适用数字驱动或应用读取 BSP GPIO。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心器件型号",
+      "label": "核心器件型号",
+      "value": "SC01B",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "固定工作模式",
+      "label": "固定工作模式",
+      "value": "MD接VDD，液位检测模式",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "输出有效电平",
+      "label": "输出有效电平",
+      "value": "检测有效为低，检测无效为高；须完成初始化并正确调试",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "输出电气结构",
+      "label": "输出电气结构",
+      "value": "NMOS开漏，芯片内置约10kΩ上拉；板上另有R4 10kΩ上拉到3.3V",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "上电初始化时间",
+      "label": "上电初始化时间",
+      "value": "约120；不作为整板上电后必定可靠的最大等待时间保证",
+      "unit": "ms",
+      "conditions": {}
+    },
+    {
+      "key": "指示灯状态",
+      "label": "指示灯状态",
+      "value": "DO低时LED2支路导通，用于指示检测输出状态",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_水位传感器模块_2026-10-12.pdf",
+      "sha256": "4671b1308f36aab25bdbc865865c25f21f8c7c85c70c5ec7e30823d2ef4090a8"
+    }
+  ],
+  "driver_files": [
+    "modules/water-level/drivers/common/sc01b.c",
+    "modules/water-level/drivers/common/sc01b.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

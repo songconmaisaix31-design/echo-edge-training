@@ -1,0 +1,31 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "0.96寸OLED V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 56,
+  "role": "host_driver",
+  "connector": "U3",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C，图注 0x78 为线上写地址，对应公共 API 的 7bit 地址 0x3C。",
+  "programming_facts_from_release": [],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_0.96OLED_2026-10-12.pdf",
+      "sha256": "4b1f6a6865a9ffdf1cd06b079066ca54caaa87fe7c1d59d3d413773a69a58671"
+    }
+  ],
+  "driver_files": [
+    "modules/oled-096/drivers/common/ssd1306.c",
+    "modules/oled-096/drivers/common/ssd1306.h",
+    "modules/oled-096/drivers/common/ssd1306_font.inc",
+    "modules/oled-096/drivers/common/ssd1306_graphics.inc"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

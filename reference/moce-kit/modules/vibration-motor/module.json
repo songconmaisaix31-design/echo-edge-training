@@ -1,0 +1,50 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "震动马达V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 32,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "DI/DAT",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "DI 是模块输入，接主控 DO；主控不直接驱动裸马达。",
+  "programming_facts_from_release": [
+    {
+      "key": "控制有效电平",
+      "label": "控制有效电平",
+      "value": "高电平开启驱动，低电平关闭驱动",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "控制端默认状态",
+      "label": "控制端默认状态",
+      "value": "栅极设置10kΩ下拉，控制端悬空时驱动默认关闭",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "驱动方式",
+      "label": "驱动方式",
+      "value": "AO3400A N沟道MOS管低端开关驱动，马达两端设置续流二极管",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_震动马达模块_2026-10-12.pdf",
+      "sha256": "04e07ec5f8491447c07137063718b0aa9de53c71f5268924f368ac31a6d1a003"
+    }
+  ],
+  "driver_files": [
+    "modules/vibration-motor/drivers/common/vibration_motor.c",
+    "modules/vibration-motor/drivers/common/vibration_motor.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

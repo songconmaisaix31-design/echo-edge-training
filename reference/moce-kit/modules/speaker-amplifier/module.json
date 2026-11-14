@@ -1,0 +1,52 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "功放 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 57,
+  "role": "host_driver",
+  "connector": "U2",
+  "pin_numbers": {
+    "1": "NC",
+    "2": "LRCLK/WS",
+    "3": "BCLK",
+    "4": "DIN",
+    "5": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "MAX98357A；5V 独立经 CN1 XT30 输入(pin1 GND/pin2 +5V)。GH5 pin1 未接，不是电源。扬声器桥接两端均不可接地。",
+  "programming_facts_from_release": [
+    {
+      "key": "功放芯片型号",
+      "label": "功放芯片型号",
+      "value": "MAX98357AETE+T",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "I²S模式硬件增益",
+      "label": "I²S模式硬件增益",
+      "value": "12；GAIN_SLOT直接接GND，采用固定硬件配置",
+      "unit": "dB",
+      "conditions": {}
+    },
+    {
+      "key": "I²S声道与关断配置",
+      "label": "I²S声道与关断配置",
+      "value": "5V供电时，SD_MODE经1MΩ上拉，配置为左右声道平均混合输出：(L＋R)/2；未引出独立关断控制接口",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_喇叭功放电路_2026-10-12.pdf",
+      "sha256": "c58c2a77b6de725418663023a490d676814fd367bc207c256d9fab3b70de06ce"
+    }
+  ],
+  "driver_files": [
+    "modules/speaker-amplifier/drivers/common/max98357a.c",
+    "modules/speaker-amplifier/drivers/common/max98357a.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

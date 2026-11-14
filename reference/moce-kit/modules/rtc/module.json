@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "实时时钟 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 51,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "图注 3.3V；7bit 地址 0x52；CR1220 为不可充电电池，禁止开启涓流充电。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心RTC型号",
+      "label": "核心RTC型号",
+      "value": "RV-3028-C7-32.768kHz-1ppm-TA-QC",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "I²C地址",
+      "label": "I²C地址",
+      "value": "0x52，7位地址；线上写地址字节0xA4、读地址字节0xA5",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "I²C最高速率",
+      "label": "I²C最高速率",
+      "value": "器件支持400kHz；实际总线还需满足线长、电容和上拉条件",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "涓流充电约束",
+      "label": "涓流充电约束",
+      "value": "使用CR1220时必须禁用，TCE=0",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "外部辅助信号",
+      "label": "外部辅助信号",
+      "value": "CLKOUT、INT未引出，EVI接地",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "断电保持验证状态",
+      "label": "断电保持验证状态",
+      "value": "后备切换配置、断电保持时间及恢复后时间有效性待实测",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_实时时钟 RTC 模块_2026-10-12.pdf",
+      "sha256": "8f4b1b12b92b0df1ebacd4796b7e7fc6ef8192176f673e3da4856201ef0d0e96"
+    }
+  ],
+  "driver_files": [
+    "modules/rtc/drivers/common/rv3028.c",
+    "modules/rtc/drivers/common/rv3028.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

@@ -1,0 +1,93 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "文本转语音 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 49,
+  "role": "host_driver",
+  "connector": "U1",
+  "pin_numbers": {
+    "1": "3V3",
+    "2": "RX",
+    "3": "TX",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "RX 为模块输入、TX 为模块输出，分别接主控 TX、RX。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心语音合成芯片",
+      "label": "核心语音合成芯片",
+      "value": "SYN6288E",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "UART通信格式",
+      "label": "UART通信格式",
+      "value": "8位数据位、无校验、1位停止位，无硬件流控；默认9600bps，支持19200及38400bps",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "语音合成文本编码",
+      "label": "语音合成文本编码",
+      "value": "GB2312、GBK、BIG5、Unicode；发送数据须与命令中的编码选择一致。",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "单次语音合成文本最大长度",
+      "label": "单次语音合成文本最大长度",
+      "value": "200；按编码后的字节数计算，超长文本由主控分段。",
+      "unit": "byte",
+      "conditions": {}
+    },
+    {
+      "key": "串口命令帧格式",
+      "label": "串口命令帧格式",
+      "value": "帧头0xFD＋2字节数据区长度＋数据区；长度高字节在前；按对应命令定义填写参数及异或校验；最大帧长度206字节。",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "UART接收反相实现",
+      "label": "UART接收反相实现",
+      "value": "板上RX通过Q1 SS8050及外围电阻进行反相后接入芯片RXD；主控从U1发送时不再重复反相。",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "音量调节能力",
+      "label": "音量调节能力",
+      "value": "16级；文本前景音量与背景音乐音量可分别控制，具体控制标记按手册执行",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "词语语速调节能力",
+      "label": "词语语速调节能力",
+      "value": "支持6级词语语速调整，通过文本控制标记设置。",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "串口状态回传定义",
+      "label": "串口状态回传定义",
+      "value": "0x4A初始化成功；0x41命令接收成功；0x45命令接收失败；0x4E正在播音；0x4F空闲。",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_文本转语音SYN6288_2026-10-12.pdf",
+      "sha256": "b7e1416550f01d7d1b45d15a43acc709377f3d6a365e0a5f0573157a2ebe29af"
+    }
+  ],
+  "driver_files": [
+    "modules/text-to-speech/drivers/common/syn6288e.c",
+    "modules/text-to-speech/drivers/common/syn6288e.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

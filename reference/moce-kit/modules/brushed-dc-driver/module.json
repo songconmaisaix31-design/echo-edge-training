@@ -1,0 +1,62 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "直流有刷电机驱动 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 63,
+  "role": "host_driver",
+  "connector": "GH8",
+  "pin_numbers": {
+    "1": "PWMA",
+    "2": "AIN2",
+    "3": "AIN1",
+    "4": "VCC",
+    "5": "GND",
+    "6": "BIN1",
+    "7": "BIN2",
+    "8": "PWMB"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "第一批 TB6612；VM 独立供电。不要套用第二批 AT8236 的 GH10 线序。VCC/VM 范围须确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心驱动芯片",
+      "label": "核心驱动芯片",
+      "value": "TB6612FNG，双通道H桥有刷直流电机驱动",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "STBY硬件配置",
+      "label": "STBY硬件配置",
+      "value": "STBY直接连接3.3V，未引出独立待机控制",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "芯片PWM频率上限",
+      "label": "芯片PWM频率上限",
+      "value": "100；属于芯片工作范围上限，实际使用频率需考虑损耗、噪声和温升",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "电机反馈能力",
+      "label": "电机反馈能力",
+      "value": "本原理图未设置电流检测、转速或位置反馈电路，模块采用开环驱动",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_直流有刷电机-TB6612_2026-10-12.pdf",
+      "sha256": "aa2e16489bf3027310ffeba3e8286b43c5c9d24e38345a7d390897bb43b42bd2"
+    }
+  ],
+  "driver_files": [
+    "modules/brushed-dc-driver/drivers/common/tb6612.c",
+    "modules/brushed-dc-driver/drivers/common/tb6612.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

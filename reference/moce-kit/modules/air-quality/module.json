@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "空气质量传感器  V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 34,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C；VCC 允许范围待确认，不据同插头推断可接 5V。",
+  "programming_facts_from_release": [
+    {
+      "key": "上电预热时间",
+      "label": "上电预热时间",
+      "value": "至少120秒；长期存放后的通电老化时间另按手册要求执行",
+      "unit": "s",
+      "conditions": {}
+    },
+    {
+      "key": "I²C通信速率上限",
+      "label": "I²C通信速率上限",
+      "value": "小于30，不使用100或400kHz默认配置",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "默认I²C地址",
+      "label": "默认I²C地址",
+      "value": "7位地址0x1A；写地址字节0x34、读地址字节0x35；地址可修改并掉电保存",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "正常采样周期",
+      "label": "正常采样周期",
+      "value": "不短于2秒，并遵守命令处理时间",
+      "unit": "s",
+      "conditions": {}
+    },
+    {
+      "key": "TVOC测量范围",
+      "label": "TVOC测量范围",
+      "value": "0～99999；超过9999属于拓展量程",
+      "unit": "ppb",
+      "conditions": {}
+    },
+    {
+      "key": "TVOC测量精度条件",
+      "label": "TVOC测量精度条件",
+      "value": "25℃、50%RH下典型30% F.S，最大误差50% F.S；典型精度适用0～9999ppb，拓",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_空气质量传感器模块_2026-10-12.pdf",
+      "sha256": "fec5c15e23ce91ad6d5493f25d0aec59d587bcdf49a8572d59df6bd6d76ffedd"
+    }
+  ],
+  "driver_files": [
+    "modules/air-quality/drivers/common/ags02ma.c",
+    "modules/air-quality/drivers/common/ags02ma.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

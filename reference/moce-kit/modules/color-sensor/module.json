@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "颜色识别 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 17,
+  "role": "host_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "VCC",
+    "2": "SCL",
+    "3": "SDA",
+    "4": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "I2C；VCC 允许范围待确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "核心传感器型号",
+      "label": "核心传感器型号",
+      "value": "VEML6040A3OG",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "采集通道",
+      "label": "采集通道",
+      "value": "R、G、B、W 四通道",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "单通道数据分辨率",
+      "label": "单通道数据分辨率",
+      "value": "16",
+      "unit": "bit",
+      "conditions": {}
+    },
+    {
+      "key": "I²C 从机地址",
+      "label": "I²C 从机地址",
+      "value": "0x10，7 位固定地址",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "支持的常用总线速率",
+      "label": "支持的常用总线速率",
+      "value": "100、400",
+      "unit": "kHz",
+      "conditions": {}
+    },
+    {
+      "key": "积分时间档位",
+      "label": "积分时间档位",
+      "value": "40、80、160、320、640、1280",
+      "unit": "ms",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_颜色识别模块_2026-10-12.pdf",
+      "sha256": "75804b7e39be5ccb8574bedf0c126ef410782facb2b876bc4523ee9b1e91affa"
+    }
+  ],
+  "driver_files": [
+    "modules/color-sensor/drivers/common/veml6040.c",
+    "modules/color-sensor/drivers/common/veml6040.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

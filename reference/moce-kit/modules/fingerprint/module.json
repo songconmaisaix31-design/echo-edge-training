@@ -1,0 +1,48 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "指纹模块  V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 54,
+  "role": "host_driver",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "缺对应图纸和实物针号；待确认供电及模块 TX/RX 方向。",
+  "programming_facts_from_release": [
+    {
+      "key": "指纹采集像素",
+      "label": "指纹采集像素",
+      "value": "80 × 64",
+      "unit": "像素",
+      "conditions": {}
+    },
+    {
+      "key": "指纹存储容量",
+      "label": "指纹存储容量",
+      "value": "50",
+      "unit": "枚",
+      "conditions": {}
+    },
+    {
+      "key": "默认 UART 波特率",
+      "label": "默认 UART 波特率",
+      "value": "57600",
+      "unit": "bit/s",
+      "conditions": {}
+    },
+    {
+      "key": "比对时间",
+      "label": "比对时间",
+      "value": "＜0.8",
+      "unit": "s",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [],
+  "driver_files": [
+    "modules/fingerprint/drivers/common/zw83080.c",
+    "modules/fingerprint/drivers/common/zw83080.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

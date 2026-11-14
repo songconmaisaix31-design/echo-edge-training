@@ -1,0 +1,72 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "灯板 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 30,
+  "role": "host_driver",
+  "connector": "CN3",
+  "pin_numbers": {
+    "1": "NC",
+    "2": "DI",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "CN3 pin1 未接、pin2 DI、pin3 GND。5V 经独立 CN2 XT30 输入(pin1 GND、pin2 +5V)，不要从三针信号口供电。3.3V 控制是否满足门限需确认。",
+  "programming_facts_from_release": [
+    {
+      "key": "灯珠型号",
+      "label": "灯珠型号",
+      "value": "WS2812B-Mini-V6",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "灯珠数量",
+      "label": "灯珠数量",
+      "value": "64",
+      "unit": "颗",
+      "conditions": {}
+    },
+    {
+      "key": "单色灰度等级",
+      "label": "单色灰度等级",
+      "value": "每个 R、G、B 通道支持 256 级灰度",
+      "unit": "级",
+      "conditions": {}
+    },
+    {
+      "key": "控制方式",
+      "label": "控制方式",
+      "value": "单线串行级联控制",
+      "unit": "",
+      "conditions": {}
+    },
+    {
+      "key": "数据传输速率",
+      "label": "数据传输速率",
+      "value": "800",
+      "unit": "kbit/s",
+      "conditions": {}
+    },
+    {
+      "key": "复位信号低电平时间",
+      "label": "复位信号低电平时间",
+      "value": "大于 280",
+      "unit": "μs",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_WS2812灯板_2026-10-12.pdf",
+      "sha256": "86b43bc70ca6a166c0b788413478bc782b9111831ae2ebe4c23181e0ffe7347e"
+    }
+  ],
+  "driver_files": [
+    "modules/ws2812-led-panel/drivers/common/integration_requirements.h",
+    "modules/ws2812-led-panel/drivers/common/ws2812b_do_dma.c",
+    "modules/ws2812-led-panel/drivers/common/ws2812b_do_dma.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

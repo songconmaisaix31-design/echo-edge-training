@@ -1,0 +1,21 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "12V锂电池充电器 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 51,
+  "role": "no_software_interface",
+  "connector": null,
+  "pin_numbers": {},
+  "connection_status": "blocked",
+  "notes": "无软件接口；电池串数、充电电压电流、插头极性须由供货方确认后使用。",
+  "programming_facts_from_release": [],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_12V锂电池充电器_2026-10-12.pdf",
+      "sha256": "1d92c6aad1ee921f0db657b099a90aad707a6700058a91f369ec32a618262cb6"
+    }
+  ],
+  "driver_files": [],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

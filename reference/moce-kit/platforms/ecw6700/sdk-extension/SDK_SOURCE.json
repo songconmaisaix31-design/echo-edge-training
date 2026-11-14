@@ -1,0 +1,135 @@
+{
+  "baseline": "B02P12",
+  "provenance": "user supplied fixed archive; not claimed pristine signed upstream",
+  "archive": "ECW6700FSDK_V1.0.0B02P12.tar.gz",
+  "sha256": "084618cdb6ab6f9c014e683fafff4ae82c3b77d3f424018a8d0e5604aa1c229c",
+  "sdk_root": "ECW6700FSDK_V1.0.0B02P12",
+  "overlays": [
+    {
+      "path": "drivers/dma/dma.c",
+      "before": "fc06effb3be4faa9ad1722895f2b25d694e5c9c5b3e3dce67a29014b9f1979be",
+      "after": "ba71915889912970e4217873a903731362a37eafb6db5297c3b475e6081a119d",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "include/drivers/dma/dma.h",
+      "before": "c638996380423a1e885cb182706d648037784d7c6ebe6516563e1aeaea010048",
+      "after": "0a76905bcc4e4759cadb52bd84e816f922c2a723e3d30321c484ef6e71e1fc5e",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "drivers/i2s/i2s_ll.c",
+      "before": "cc0bfadc55fc59c0818434dd278447f31f772966f14cbd132522dab6c8d6e5d8",
+      "after": "fb67d69b37bfdfa69706e20224c18c954acab4c489b90e8eb7426e28f44aa079",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "drivers/i2s/i2s_ll.h",
+      "before": "5aaf68f79bdb694b23143f06c78bc25f04e529028401c98b0db7eabe2d1f8f67",
+      "after": "c9b58d745e57d5d954f30ac4755536fff6b2801df09fac255dad63218c12aad5",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/wpa/Makefile",
+      "before": "7dbc5a9459148e43f6504a22194defc8e62388cabecd00e0848dba9d9640972f",
+      "after": "0ee36a7f66d0e6182d6297e38fbb2a794a815eb24a4dcdc87812852b569afaf6",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/sntp/Makefile",
+      "before": "1ed428776f996745e946120e6718c2f1508e2ce303223b05b18934841b079c24",
+      "after": "10ef97bb444602ad4935399c6a3a9f8e9470794e940ea230b109b6e3ad0d8608",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "Boards/ecw6700f/makefile",
+      "before": "d0a7e6fedb58f2d1188d09b30222fe96fe90fb9e069d6d6f39cc2ae277e7bc63",
+      "after": "d76ba01504d6153a9a168b251bbf6e7b25bb2c83dca8448f1eda2398447376f7",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "components/wifi_ctrl/system_wifi.c",
+      "before": "83d34550a1a0e94bc9e95aa01ffb3846b20406bc5d41fb6cc7b80e79b6ec2318",
+      "after": "b3656472499d1a5ccc77a9b2ccb317709dc516242d88bdf2ba4a76d59ae9ef1b",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "components/wpa/wpa_supplicant/wpas_cntrl_api.c",
+      "before": "187dd4445489ebb030716c8e74a5940914a4f688f5fa58fb90bf5a4c559a7c64",
+      "after": "3265ace624f62e8759a3af3bba5a099f0556b8746059b85e7fc379564e30aa1e",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "components/wpa/wpa_supplicant/wpas_cntrl_api.h",
+      "before": "61d9ea3e49360babd6ac800cfa233802845cd9a5ea6f8cd8d6fcbaf6d3e4158b",
+      "after": "e8670e0fccc9c40793f69a0e7b2fb3a483216485f1424d9b4507e7f97bef243f",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "components/ble/nimble/nimble/host/services/gap/src/ble_svc_gap.c",
+      "before": "387d5f89f1dfc43dd24f83d10c919824e2f072ded4382f94583e474401540459",
+      "after": "4a14c47c79521c22dfe8cb0324bdfbb2877f44656cb3dd9304caaba36d15e07b",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/ble/nimble/nimble/host/services/gap/include/services/gap/ble_svc_gap.h",
+      "before": "6e30a8127d8961490fb3c5ea2d674a9fada68e8b26d5e442f27e7b50aecbb1c1",
+      "after": "abe4e778e3a2a65b7e965e21ff8c197759410b993ca0e063fec72df403a2337e",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/ble/nimble/nimble/host/services/gatt/src/ble_svc_gatt.c",
+      "before": "0a9b7048ea6ba3b0480f386f1f27ebc09bbe7849f41c75935c794b06974eea82",
+      "after": "cd5e524aaefc875ccd5914a99e648838b1326a61048e99ae69b4a8019a2a0a80",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/ble/nimble/nimble/host/services/gatt/include/services/gatt/ble_svc_gatt.h",
+      "before": "a335faf03d003ee0cc632bd50d12b6bf53777804c4d070255aaf6b58fb7fd78e",
+      "after": "5c00089afd1da17700b0db10e9dcaa18bc3250e9187ee3bad16f7a7ac7dfbf98",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "components/wpa/wpa_supplicant/wpas_struct_iface.c",
+      "before": "c535497eee82f4759a041ce343aab35dc178d18150a94987f60fc82029fc35d5",
+      "after": "aa880fe7f8ce46b6158ed3ebd0e6f2380a6d28ad83ff4b49de1ec0ae58034daa",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "components/wpa/wpa_supplicant/wpas_struct_iface.h",
+      "before": "c2c367fd246801b5860fe7bce5c153e68a16a29f4795ca24d9c93827bbace497",
+      "after": "7f068672b0fba2b450ab07ba6b9a2b0756382d6b27924811fa22d72492495a8b",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "include/components/wifi_crtl/system_wifi.h",
+      "before": "54d983ed9decd35cfb68f1d80aef1e950a1552bcd200f983580bdf4e6d9691fe",
+      "after": "777a6bcae85e216eaf44151b42ef80d99d4f2e0129d46c05dc53c68527dba5f5",
+      "action": "three-way clean merge"
+    },
+    {
+      "path": "Boards/makefile",
+      "before": "9e304d2c5aadbc36a3d3259d8b13342096d3b7cb7f9b55309d03abbc3a1135ca",
+      "after": "29c11e378840a462a79100fb6069c3872a5970e4675d80ea4e89c634a1177bec",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "drivers/adc/aux_adc.c",
+      "before": "6468164238286f876348191959c19179841fd092fc34c691419449fdc6e07109",
+      "after": "729ead59881bbc4e32fa4c9dfe7b144cc0d8823331d3fcfdcabfec69f5ae72a1",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "drivers/adc/aux_adc_common.c",
+      "before": "7237a5248dcc14a8b09cbc8709bdcf8890e980af06a3a879707e364afbc54178",
+      "after": "dd4fa539504efd1a8fb77f5f355585b5f2bade303f136659a8172b2c649b057f",
+      "action": "unchanged upstream; replay reviewed overlay"
+    },
+    {
+      "path": "include/drivers/adc/moce_adc_checked.h",
+      "before": null,
+      "after": "e94684d7de5e3caf0435d2b7cbf9bb869a9df872d839d5bb6bc0ee1007b989ec",
+      "action": "new checked extension"
+    }
+  ]
+}

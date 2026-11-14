@@ -1,0 +1,36 @@
+{
+  "schema": "moce.contestant-module/v1",
+  "name": "舵机控制 V1",
+  "hardware_version": "V1.0",
+  "driver_origin_revision": 65,
+  "role": "host_pwm_driver",
+  "connector": "CN2",
+  "pin_numbers": {
+    "1": "PWM1",
+    "2": "PWM2",
+    "3": "GND"
+  },
+  "connection_status": "schematic-derived; physical orientation unverified",
+  "notes": "采用第一批防呆接口图；舵机电源由独立 5V 供电端提供，共地。不要将 PWM 当电源。",
+  "programming_facts_from_release": [
+    {
+      "key": "转接电路形式",
+      "label": "转接电路形式",
+      "value": "无源信号直连与电源并联分配，未配置有源控制和稳压电路",
+      "unit": "",
+      "conditions": {}
+    }
+  ],
+  "drawing_identity": [
+    {
+      "drawing": "SCH_MG90S舵机控制_防呆接口_2026-10-12.pdf",
+      "sha256": "9e4c4750f7622fde67476506435d96aedb62e292890479e0a171a86ec0b01b69"
+    }
+  ],
+  "driver_files": [
+    "modules/mg90-servo-controller/drivers/common/rc_servo.c",
+    "modules/mg90-servo-controller/drivers/common/rc_servo.h"
+  ],
+  "application_examples_included": false,
+  "tested_on_hardware_this_delivery": false
+}

@@ -1,0 +1,23 @@
+{
+  "family": "ecw6700f",
+  "verified_at": "2026-11-08",
+  "availability_check": "HTTP range 0-63 returned 206 and expected archive total size; full archive hashes verified against local originals",
+  "archives": [
+    {
+      "filename": "ECW6700FSDK_V1.0.0B02P12.tar.gz",
+      "url": "https://www.eswincomputing.com/community/api/uploads/2026/10/30/1793340898dbc13eda542bf019.gz",
+      "sha256": "084618cdb6ab6f9c014e683fafff4ae82c3b77d3f424018a8d0e5604aa1c229c",
+      "bytes": 298906827,
+      "root": "ECW6700FSDK_V1.0.0B02P12",
+      "strip_root": false
+    },
+    {
+      "filename": "riscv-ubuntu20_04-elf-2025_0917_0905.tar.gz",
+      "url": "https://www.eswincomputing.com/community/api/uploads/2026/05/09/1778299458afee3e119c36cb59.gz",
+      "sha256": "42c820c2ffb8d918ef922533d44d62b1bb4ff8e87928992f193b3d571d1d1e31",
+      "bytes": 450042678,
+      "root": "riscv-elf-toolchain",
+      "strip_root": false
+    }
+  ]
+}
