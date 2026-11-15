@@ -1,0 +1,26 @@
+[Unit]
+Description=Echo Edge workstation API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo-edge
+Group=echo-edge
+WorkingDirectory=/opt/echo-edge/src/backend
+EnvironmentFile=/etc/echo-edge.env
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=2
+Environment=TMPDIR=/opt/echo-edge/data/tmp
+ExecStart=/opt/echo-edge/venvs/api/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8036 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=210
+UMask=0027
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/echo-edge/data
+
+[Install]
+WantedBy=multi-user.target
