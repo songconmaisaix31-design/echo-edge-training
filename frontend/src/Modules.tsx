@@ -4,6 +4,7 @@ import {Button} from './button'
 import {api} from './api'
 import {structureEvidenceHref} from './diagnosis-contract'
 import StructureEvidence from './StructureEvidence'
+import MedicalReview from './MedicalReview'
 import {useCapabilities} from './use-capabilities'
 export {api} from './api'
 type Row={id:number;name?:string;birth?:string;sex?:string;notes?:string;history?:string;treatment_history?:string;title?:string;status?:string;patient_id?:number;created?:string;kind?:string;reason?:string;role?:string;author?:string;text?:string;state?:string;snapshot?:{name:string;birth:string}}
@@ -133,6 +134,7 @@ export default function Modules({page,role}:{page:string;role:string}){
  const statusMessage=modelStatus==='disconnected'?'服务未连接':'读取中'
  const capability=capabilities?(capabilities.model==='unavailable'?'模型未接入':capabilities.model):statusMessage
  const structureCapability=capabilities?(capabilities.structureConfigured?'已接入':'模型未接入'):statusMessage
+ const reviewCapability=capabilities?(capabilities.reviewConfigured?'已配置 · '+capabilities.reviewModel:'模型未接入'):statusMessage
  const modelReady=capabilities?.model==='Stanford 切面模型'
  const modelDetail=capabilities?.modelDetail||''
  async function load(){const [p,e,c]=await Promise.all([api<Row[]>('/patients'),api<Row[]>('/examinations'),api<Row[]>('/cases')]);setPatients(p);setExams(e);setCases(c)}
@@ -155,7 +157,7 @@ export default function Modules({page,role}:{page:string;role:string}){
  return <main className={'dashboard business '+(isWork?'dark-work':'')}><div className="dashboard-title"><div><span className="eyebrow">Echo Edge · 研究工作区</span><h1>{labels[page]}</h1></div><Button variant="outline" disabled={busy} onClick={()=>{refreshCapabilities(value=>value+1);void run(async()=>{await load();await details(caseId)})}}>刷新数据</Button></div>
  {error&&<p role="alert" className="error">{error}</p>}{notice&&<p role="status">{notice}</p>}
  {page==='settings'?<><section className="queue padded"><h2>模型状态</h2>{[
-  ['切面识别',capability],['影像质量','模型未接入'],['结构分割',structureCapability],['异常征象','模型未接入'],
+  ['切面识别',capability],['影像质量',reviewCapability],['结构分割',structureCapability],['异常征象',reviewCapability],
  ].map(([label,status])=><div className="record" key={label}><b>{label}</b><span>{status}</span></div>)}</section>{role==='admin'?<><section className="queue padded"><h2>用户与角色</h2><form className="business-form" onSubmit={e=>{e.preventDefault();const form=e.currentTarget;void run(async()=>{await api('/users',formData(form));setUsers(await api('/users'));form.reset()})}}><label>用户名<input name="name" required/></label><label>初始密码<input name="password" type="password" required minLength={12} autoComplete="new-password"/></label><label>角色<select name="role"><option value="operator">基层医生</option><option value="reviewer">审核专家</option><option value="admin">管理员</option></select></label><Button disabled={busy}>创建用户</Button></form>{users.map(u=><div className="record" key={u.id}><b>{u.name}</b><select aria-label={'角色 '+u.name} value={u.role} onChange={e=>{const role=e.target.value;if(confirm('确认修改用户角色并使其现有登录失效？'))void run(async()=>{await api('/users/'+u.id+'/role',{role},'PUT');setUsers(await api('/users'))})}}><option value="operator">基层医生</option><option value="reviewer">审核专家</option><option value="admin">管理员</option></select></div>)}</section><section className="queue padded"><h2>操作日志</h2>{logs.map(l=><div className="record" key={l.created+l.action+l.target}>{l.created} · 用户 {l.actor} · {l.action} · {l.target}</div>)}</section></>:<section className="queue padded"><h2>账号权限</h2><p>当前角色 {role}。用户和角色修改、全局操作日志需要管理员账号。</p></section>}</>:<>
  <div className="context-bar"><label>当前检查<select value={caseId} onChange={e=>selectCase(e.target.value)}><option value="">选择检查 / 既有病例</option>{cases.map(c=><option key={c.id} value={c.id}>#{c.id} {c.title}</option>)}</select></label><span>{current?.status==='draft'?'可导入影像':current?'已提交审核':''}</span></div>
  {!caseId?<section className="queue empty-state"><h2>先选择检查</h2><p>该页面的数据与当前检查关联。</p><Button asChild><a href="#exams">创建检查</a></Button></section>:<>
@@ -169,9 +171,10 @@ export default function Modules({page,role}:{page:string;role:string}){
    </section>
    {isWork&&<section className="queue padded"><h2>AI 分析结果</h2>
     <div className="tabs">{['切面识别','影像质量','心脏结构','异常征象'].map(t=><Button key={t} variant={tab===t?'default':'outline'} onClick={()=>setTab(t)}>{t}</Button>)}</div>
-    <div className="availability"><b>{tab} · {tab==='切面识别'?capability:tab==='心脏结构'?structureCapability:'模型未接入'}</b></div>
+    <div className="availability"><b>{tab} · {tab==='切面识别'?capability:tab==='心脏结构'?structureCapability:reviewCapability}</b></div>
     {tab==='切面识别'?<ViewAnalysis key={active} id={active} available={modelReady} detail={modelDetail}/>:tab==='心脏结构'?
-     (active&&hasExam?<StructureEvidence key={active} id={active} configured={capabilities?.structureConfigured??null} terminal={!!capabilities?.terminalConfigured}/>:<p>请选择正式检查中已导入的影像。</p>):<p>此分析项当前没有可用模型。</p>}
+     (active&&hasExam?<StructureEvidence key={active} id={active} configured={capabilities?.structureConfigured??null} terminal={!!capabilities?.terminalConfigured}/>:<p>请选择正式检查中已导入的影像。</p>):
+     active&&hasExam?<MedicalReview key={active+'-'+tab} id={active} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'}/>:<p>请选择正式检查中已导入的影像。</p>}
    </section>}
   </div>
   {page==='multi'&&<section className="queue padded"><h2>对照影像</h2><select value={compare} onChange={e=>setCompare(e.target.value)}><option value="">选择第二段影像</option>{media.map((id,i)=><option key={id} value={id}>影像 {i+1}</option>)}</select>{active&&compare&&<div className="business-columns"><Player key={'a'+active} id={active}/><Player key={'b'+compare} id={compare}/></div>}<p>资料覆盖情况由医生记录。此页面不生成临床完整性评分。</p></section>}

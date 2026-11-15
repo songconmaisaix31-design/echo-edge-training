@@ -114,3 +114,26 @@ arduino-cli upload --fqbn $board --port $port --input-dir $output $sketch
 在「AI 影像分析」中选择正式检查与影像，切换到「心脏结构」。也可在「AI 辅助诊断」选择检查后打开「诊断证据」，或从检查、影像页面进入「打开四腔分割」。选择已确认属于 A4C 的帧，再点击「运行四腔分割」。`POST /api/v1/media/{id}/structure-jobs` 接收从 0 开始的源帧序号，校验 Release 权重的 SHA-256，以 256 × 256 灰度输入运行四腔 U-Net。结果保存源帧和时间戳、权重摘要及结构叠图。`GET /api/v1/analysis-jobs/{id}/overlay` 按检查访问权限返回叠图。检查创建者或管理员可以发送 `HINT MASK READY`，网页将在核对实际 `ACK` 后显示回执。
 
 用上面的公开教学视频首帧复测。第 18 轮模型生成 9,330 个前景掩膜像素，网页成功加载叠图，刷新后读回叠图及原有切面结果。未登录读取叠图返回 401，越界帧返回 422。`COM4` 返回 `ACK,28`，命令到回执 25.416 ms。该结果用于验证数据流和设备指令。CardiacUDC 的发布范围为非商业研究，成人／混合队列的输出在儿童场景需要单独验证。[CardiacUDC Release](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1)
+
+## 大模型影像质量和异常征象复核
+
+后端使用 OpenAI 兼容的 Chat Completions 接口提交已导入视频的时间采样帧。配置必须指定支持图片和 JSON 输出的模型。当前 DeepSeek 接入使用 `deepseek-flash`。在启动后端的同一 PowerShell 会话设置以下变量。示例复用本机已有的 DeepSeek 凭据环境变量。
+
+```powershell
+$env:ECHO_REVIEW_BASE_URL = 'https://api.deepseek.com'
+$env:ECHO_REVIEW_MODEL = 'deepseek-flash'
+$env:ECHO_REVIEW_API_KEY_ENV = 'ANTHROPIC_AUTH_TOKEN'
+./Start-EchoEdge.ps1
+```
+
+`ECHO_REVIEW_API_KEY_ENV` 保存服务端读取凭据的环境变量名。默认名为 `ECHO_REVIEW_API_KEY`。使用其他兼容服务时，将上述基地址和模型名改为对应配置，并在服务进程环境中设置 API key。凭据只在后端读取，能力接口返回配置状态、模型名和配置说明。请求采用 HTTPS，连接超时为 15 秒，读取超时为 180 秒。
+
+在「AI 影像分析」选择正式检查及其影像，切到「影像质量」或「异常征象」，点击对应的运行按钮。后端最多抽取 12 个时间采样帧，将图像和时间戳发送到配置的模型服务。模型按心脏超声复核结构输出结论、可见观察、解释、证据帧、置信程度自评、评估限制与医生复核建议。点击证据按钮可查看实际源帧。分析记录保存到 SQLite，刷新、切换页面或重新进入当前检查可以读回。下拉列表可查阅该影像同类任务的历史结果。
+
+「AI 辅助诊断」的「AI 诊断结果」提供质量复核，「诊断证据」提供异常征象复核。首页和「系统管理」从 `/api/v1/capabilities` 的 `reviewConfigured`、`reviewModel`、`reviewDetail` 读取配置状态。一次真实任务成功后可确认服务及图像调用可用。
+
+`POST /api/v1/media/{id}/review-jobs` 接收 `{"kind":"quality"}` 或 `{"kind":"findings"}`。结果沿用分析任务权限、持久化和历史读取接口，分别存为 `llm_quality` 和 `llm_findings`。服务端校验输出结构、任务类型和证据帧归属，证据时间戳取自导入帧索引。模型拒绝、鉴权错误、限流、超时和不合格响应记录为失败任务，页面显示失败原因。同一后端同时执行一个大模型复核任务。
+
+静态采样只覆盖所提供片段的部分帧，动态功能、其他切面和完整检查仍需医生阅片。置信程度为模型自评，输出属于研究复核意见，临床有效性需独立评价。[DeepSeek 视觉输入](https://api-docs.deepseek.com/guides/vision/) · [JSON 输出](https://api-docs.deepseek.com/guides/json_mode/)
+
+2026 年 11 月 15 日通过 Chromium、真实 HTTP 服务及隔离 SQLite 验证，使用 53 帧公开教学视频抽样 12 帧调用 DeepSeek。质量复核返回「评估受限」，征象复核返回「无法判断」，均附观察、实际帧索引和限制说明。结果刷新与跨检查隔离通过，未登录提交返回 401，非法任务类型返回 422。此次验证覆盖功能链路，输出的医学判断仍需临床专家独立评价。

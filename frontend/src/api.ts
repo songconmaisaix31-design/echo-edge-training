@@ -1,4 +1,4 @@
-export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;terminalConfigured:boolean}
+export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;terminalConfigured:boolean;reviewConfigured?:boolean;reviewModel?:string|null;reviewDetail?:string}
 
 export async function api<T>(path:string,body?:unknown,method='POST'):Promise<T>{
  const r=await fetch('/api/v1'+path,body===undefined?undefined:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})

@@ -11,6 +11,7 @@ from threading import BoundedSemaphore
 
 import av
 import model_inference
+import medical_review
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image
@@ -38,9 +39,12 @@ def fail(status, code, message):
 @app.get("/api/v1/capabilities")
 def capabilities():
     reason, config = model_inference.configuration()
+    review_detail, review = medical_review.configuration()
     return {"model": "Stanford 切面模型" if config else "unavailable", "modelDetail": reason, "formats": list(FORMATS), "maxBytes": LIMIT, "maxFrames": MAX_FRAMES,
             "terminalConfigured": bool(os.environ.get("ECHO_TERMINAL_PORT")),
-            "structureConfigured": analysis_jobs.structure_configuration() is not None}
+            "structureConfigured": analysis_jobs.structure_configuration() is not None,
+            "reviewConfigured": review is not None, "reviewModel": review.model if review else None,
+            "reviewDetail": review_detail}
 
 @app.post("/api/v1/media", status_code=201)
 def import_media(media: UploadFile = File(...), case_id: int = Form(...), user=Depends(current)):
