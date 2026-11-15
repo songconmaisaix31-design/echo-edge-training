@@ -21,7 +21,7 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 }
 function ModelAvailability(){
  const status=useCapabilities()
- const models=status&&status!=='disconnected'?[status.model!=='unavailable'?status.model:'',status.structureConfigured?'CardiacUDC 四腔分割':''].filter(Boolean):[]
+ const models=status&&status!=='disconnected'?[status.model!=='unavailable'?status.model:'',status.structureConfigured?'CardiacUDC 四腔分割':'',status.reviewConfigured?status.reviewModel+' 影像质量与异常征象复核':''].filter(Boolean):[]
  const heading=status==='disconnected'?'无法读取模型状态':!status?'正在读取模型状态':models.length?'已接入的 AI 模型':'AI 模型未接入'
  return <div className="availability"><ScanLine size={20}/><div><b>{heading}</b>{models.length>0&&<p>{models.join(' · ')}</p>}{status&&status!=='disconnected'&&status.structureConfigured&&<a href={structureEvidenceHref('')}>打开四腔分割</a>}</div></div>
 }

@@ -1,0 +1,12 @@
+.medical-review{min-width:0;overflow-wrap:anywhere}
+.medical-review p{margin:10px 0;line-height:1.65}
+.medical-review select{display:block;max-width:100%;margin-top:6px}
+.medical-review-result{margin-top:16px}
+.medical-observation{margin:14px 0;padding:12px;border:1px solid var(--border,#dce6eb);border-radius:8px}
+.medical-evidence-list{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.medical-review figure{margin:12px 0}
+.medical-review figure img{display:block;max-width:100%;max-height:360px;object-fit:contain;background:#07111b}
+.medical-review figcaption{margin-top:6px;font-size:13px}
+.medical-review ul{padding-left:22px;list-style:disc;line-height:1.65}
+.medical-review h4{margin-top:12px;font-weight:650}
+.medical-review [role=alert]{color:#bb384a}

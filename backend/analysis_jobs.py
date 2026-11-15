@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select, update
 
 import model_inference
+import medical_review
 import platform_db as db
 import terminal_link
 from clinical import Examination
@@ -42,10 +43,15 @@ RUNNER_MARKER = "[active local runner]"
 CARDIACUDC_SHA256 = "6e821f6768a57214d61e25602d024316b032d1f4511a7886d7f133ec2cf95f4f"
 STRUCTURE_MODEL = "cardiacudc_fourchamber"
 STRUCTURE_SLOT = BoundedSemaphore(1)
+REVIEW_SLOT = BoundedSemaphore(1)
 
 
 class StructureInput(BaseModel):
     frame_index: int = Field(ge=0, strict=True)
+
+
+class ReviewInput(BaseModel):
+    kind: medical_review.ReviewKind
 
 
 def structure_configuration():
@@ -55,12 +61,17 @@ def structure_configuration():
 
 def serialize(job):
     output = json.loads(job.output) if job.output else None
+    evidence = []
+    if output and job.model_type == STRUCTURE_MODEL:
+        evidence = [output["frame"]]
+    elif output and job.model_type in ("llm_quality", "llm_findings"):
+        evidence = list({frame["frame_index"]: frame for item in output["observations"] for frame in item["evidence_frames"]}.values())
     return {
         "id": job.id, "exam_id": job.exam_id, "media_id": job.media_id,
         "model_type": job.model_type, "model_version": job.model_version,
         "input_sha256": job.input_sha256, "state": job.state, "error": None if job.error == RUNNER_MARKER else job.error,
         "output": output,
-        "evidence_frames": [output["frame"]] if output and job.model_type == STRUCTURE_MODEL else [],
+        "evidence_frames": evidence,
         "created": job.created.isoformat() + "Z",
         "completed": job.completed.isoformat() + "Z" if job.completed else None,
         "actor": job.actor,
@@ -119,7 +130,7 @@ def run(identifier, folder, user, legacy=False):
 
 
 def execute_job(model_input, user, model_type, version, execute):
-    # Synchronous execution keeps the existing request contract.
+    # 同步执行并持久化成功或失败状态，供页面刷新读回。
     with db.Session() as session:
         job = AnalysisJob(
             exam_id=model_input.exam_id, media_id=model_input.media_id, model_type=model_type,
@@ -149,6 +160,27 @@ def execute_job(model_input, user, model_type, version, execute):
         job = session.get(AnalysisJob, job_id)
         result = serialize(job)
     return result, failure
+
+
+def run_review(identifier, folder, kind, user):
+    with db.Session() as session:
+        media = session.get(db.Media, identifier)
+        if media is None:
+            raise HTTPException(404, "影像不存在")
+        case = db.get_case(session, media.case_id, user)
+        if session.get(Examination, case.id) is None:
+            raise HTTPException(409, "影像尚未关联正式检查")
+    detail, config = medical_review.configuration()
+    if config is None:
+        raise HTTPException(503, detail)
+    video = next((path for path in folder.glob("source.*") if path.is_file()), None)
+    if video is None:
+        raise HTTPException(422, "缺少视频原件，请重新导入影像。")
+    metadata, frames = medical_review.read_frames(folder)
+    model_input = ModelInput(case.id, identifier, video, sha256(video))
+    version = "review:" + hashlib.sha256((config.endpoint + config.model + medical_review.PROMPT_VERSION).encode()).hexdigest()
+    return execute_job(model_input, user, "llm_" + kind, version,
+                       lambda _job_id: medical_review.analyze(config, folder, identifier, kind, metadata, frames))[0]
 
 
 def run_structure(identifier, folder, index, user):
@@ -230,6 +262,15 @@ def recover_jobs():
 
 
 def register(app, media_folder):
+    @app.post("/api/v1/media/{identifier}/review-jobs", status_code=201)
+    def submit_review(identifier: str, body: ReviewInput, user=Depends(db.current)):
+        if not REVIEW_SLOT.acquire(blocking=False):
+            raise HTTPException(503, "另一个大模型影像复核任务正在运行，请稍后重试。")
+        try:
+            return run_review(identifier, media_folder(identifier), body.kind, user)
+        finally:
+            REVIEW_SLOT.release()
+
     @app.post("/api/v1/media/{identifier}/analysis-jobs", status_code=201)
     def submit(identifier: str, user=Depends(db.current)):
         return run(identifier, media_folder(identifier), user)
