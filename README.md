@@ -8,6 +8,8 @@ Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研�
 
 **部署入口**：[Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)。该文档包含安装依赖、下载发布权重、迁移数据库、创建账号、启动服务和实机验收的命令。默认网页为 `http://127.0.0.1:5181/`，API 为 `http://127.0.0.1:8019/`。
 
+**公网部署**：[香港工作站](https://echo.davidwang.space/) · [Linux 部署、维护与验收说明](docs/HONGKONG_DEPLOYMENT.md)。服务器使用 Nginx HTTPS、systemd、持久 SQLite 和 CPU 模型环境；DeepSeek 凭据仅保存在后端。云端没有连接本机 USB 串口。
+
 | 四端 | 当前部署 |
 | --- | --- |
 | 网页 | `frontend/`，通过本机 HTTP 访问 API，提供检查、阅片、四腔叠图和终端回执 |
