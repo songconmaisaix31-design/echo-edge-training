@@ -98,6 +98,10 @@ static Snapshot snap;
 static Snapshot shown;              // 上次真正画到屏上的内容
 static bool dirty = true;
 
+// 演示模式: 不依赖网络, 用来单独验证屏与字模。声明放前面 —— spriteMode()
+// 要用它决定"没网时画不画裂心"。
+static bool demoMode = false;
+
 // 动画相位: 0..7 一个心动周期。放在这里是为了让 render() 也能画一帧静态的精灵
 static uint8_t animPhase = 0;
 static uint32_t animAt = 0;
@@ -453,7 +457,8 @@ static bool lowConf() { return snap.conf > 0 && snap.conf < 0.65f; }
 // 屏上的形状就是模型看到的切面: 认出四腔心画整颗心, 认出短轴画横截面圆环。
 // 这是唯一的"对外映射", 以后接上病理模型, 换这一个函数就行。
 static SpriteMode spriteMode() {
-  if (WiFi.status() != WL_CONNECTED) return SP_BROKEN;
+  // DEMO 是给人看的: 没网时如果也画裂心, 舞台上就没法演示其余四套精灵了。
+  if (!demoMode && WiFi.status() != WL_CONNECTED) return SP_BROKEN;
   switch (snap.state) {
     case ST_READY:
     case ST_STALE:   return strcmp(snap.view, "A4C") == 0 ? SP_HEART : SP_RING;
@@ -584,6 +589,7 @@ enum WifiPhase { WF_IDLE, WF_CONNECTING };
 static WifiPhase wifiPhase = WF_IDLE;
 static uint32_t wifiTryAt = 0;
 static uint32_t wifiStarted = 0;
+static uint8_t wifiFails = 0;       // 连续失败次数, 到 3 次才做一次扫描诊断
 
 static void wifiKick() {
   if (!cfg.ssid[0]) return;
@@ -594,8 +600,52 @@ static void wifiKick() {
   WiFi.begin(cfg.ssid, cfg.pass);
   wifiPhase = WF_CONNECTING;
   wifiStarted = millis();
-  wifiTryAt = millis() + 15000;
+  wifiTryAt = millis() + 12000;
   say("[WIFI] 连接 %s ...\r\n", cfg.ssid);
+}
+
+// 连不上时只说"超时"没法定位: 密码错、热点满、热点在 5GHz 都长一个样。
+// 扫一次就能分开 —— S3 只有 2.4GHz, 扫不到 SSID 基本就是热点跑到 5GHz 去了,
+// 这是现场最常见的一种, 却最容易怀疑到板子或针脚上。
+static void wifiDiagnose() {
+  say("[WIFI] 连续失败, 扫描一次 2.4GHz 热点...\r\n");
+  // 刚 fail 的 begin 还挂在协议栈里, 直接 scan 会拿到 -2(WIFI_SCAN_FAILED)。
+  // 先断开并给射频一点时间收尾。
+  WiFi.disconnect(false, false);
+  delay(250);
+  int n = WiFi.scanNetworks();
+  if (n < 0) { delay(400); n = WiFi.scanNetworks(); }
+  if (n < 0) {
+    say("[WIFI] 扫描失败 (%d), 这次跳过诊断\r\n", n);
+    return;
+  }
+  if (n == 0) {
+    say("[WIFI] 一个 2.4GHz 热点都没扫到 —— 射频或天线异常, 或周围确实没有\r\n");
+    return;
+  }
+  bool found = false;
+  for (int i = 0; i < n; i++) {
+    if (strcmp(WiFi.SSID(i).c_str(), cfg.ssid) == 0) { found = true; break; }
+  }
+  say("[WIFI] 扫到 %d 个热点, %s\r\n", n,
+      found ? "目标 SSID 在列表里 —— 查密码或热点连接数上限"
+            : "看不到目标 SSID —— 多半热点在 5GHz, 而 S3 只支持 2.4GHz");
+  if (!found) say("[WIFI] 处理: iPhone 热点打开\"最大兼容性\", 或改用 2.4GHz 热点\r\n");
+  WiFi.scanDelete();
+}
+
+// 失败原因要能分开: "热点没开" 和 "密码错了" 处理方式完全不同, 现场只看到
+// 一个 "超时" 会先怀疑硬件。
+static const char *wifiReason() {
+  switch (WiFi.status()) {
+    case WL_NO_SSID_AVAIL:   return "看不到该 SSID";
+    case WL_CONNECT_FAILED:  return "密码不对或被拒绝";
+    case WL_CONNECTION_LOST: return "连接中断";
+    case WL_DISCONNECTED:    return "已断开";
+    case WL_IDLE_STATUS:     return "空闲";
+    case WL_SCAN_COMPLETED:  return "扫描完成";
+    default:                 return "未知";
+  }
 }
 
 static void wifiTick() {
@@ -603,6 +653,7 @@ static void wifiTick() {
   if (WiFi.status() == WL_CONNECTED) {
     if (wifiPhase != WF_IDLE) {
       wifiPhase = WF_IDLE;
+      wifiFails = 0;
       say("[WIFI] 已连接 %s  信号 %ld dBm  IP %s\r\n",
           WiFi.SSID().c_str(), (long)WiFi.RSSI(), WiFi.localIP().toString().c_str());
       dirty = true;
@@ -612,8 +663,10 @@ static void wifiTick() {
   if (wifiPhase == WF_CONNECTING) {
     if (now - wifiStarted > 12000) {          // 单次尝试上限, 不在这里死等
       wifiPhase = WF_IDLE;
-      wifiTryAt = now + 3000;
-      say("[WIFI] 超时, 3 秒后重试\r\n");
+      wifiFails++;
+      wifiTryAt = now + (wifiFails >= 3 ? 6000 : 3000);
+      say("[WIFI] 超时 (连续失败 %u 次, 原因: %s), 稍后重试\r\n", wifiFails, wifiReason());
+      if (wifiFails == 3) wifiDiagnose();
       dirty = true;
     }
     return;
@@ -669,9 +722,9 @@ static void pollOnce() {
 static void printStatus() {
   say("\r\n---- PANEL ----\r\n");
   say("屏      : %s (0x%02X) SDA=%d SCL=%d\r\n", oledOk ? "在线" : "离线", oled.addr, OLED_SDA, OLED_SCL);
-  say("WiFi    : %s  ssid=%s  rssi=%ld  ip=%s\r\n",
+  say("WiFi    : %s  ssid=%s  rssi=%ld  ip=%s  连续失败 %u 次\r\n",
       WiFi.status() == WL_CONNECTED ? "已连接" : "未连接",
-      cfg.ssid, (long)WiFi.RSSI(), WiFi.localIP().toString().c_str());
+      cfg.ssid, (long)WiFi.RSSI(), WiFi.localIP().toString().c_str(), wifiFails);
   say("后端    : %s\r\n", cfg.url);
   say("状态    : %s  seq=%ld  age=%lds  case=%ld\r\n",
       statusWord(), snap.seq, snap.ageS, snap.caseId);
@@ -706,8 +759,6 @@ static void help() {
 }
 
 // 演示模式: 不依赖网络, 用来单独验证屏与字模
-static bool demoMode = false;
-
 static void demoState(const char *name) {
   demoMode = true;
   snap = Snapshot();
@@ -829,6 +880,13 @@ static void handle(char *line) {
     saveConfig();
     say("[WIFI] 已保存 ssid=%s pass=%s\r\n", cfg.ssid, pass[0] ? "***" : "(空)");
     demoMode = false;
+    // 换凭据必须先把协议栈停干净。只 disconnect(false,false) 时若上一次 begin
+    // 还在连接中, 驱动会拒绝新配置(日志里那句 "sta is connecting, cannot set
+    // config"), 于是继续拿旧密码重试, 看上去像"新密码不对"。
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+    delay(120);
+    wifiFails = 0;
     wifiKick();
     return;
   }

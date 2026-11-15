@@ -168,19 +168,31 @@ void animDraw(Oled &dev, SpriteMode mode, uint8_t phase, int ox, int oy, bool lo
     }
 
     case SP_BROKEN: {
-      heartShape(0, true, ox, oy);
+      // 断线时整屏就这一张图, 八个相位画出同一张的话看着像死机 —— 现场没法
+      // 分清"网断了"和"板子挂了"。所以让裂口慢慢张合, 并偶尔闭一下眼。
+      int8_t beat = (int8_t)((phase < 3) ? 0 : -1);
+      heartShape(beat, true, ox, oy);
       // 中间劈一道锯齿缝, 眼睛挖成 X
+      int gape = ((phase & 4) != 0) ? 1 : 0;      // 后四个相位裂得更开
       for (int y = 8; y <= 36; y++) {
         int x = 20 + ((y / 3) & 1 ? 1 : -1);
         spPx(x + ox, y + oy, false);
         if (y > 12 && y < 32) spPx(x + (y & 1 ? 1 : -1) + ox, y + oy, false);
+        if (gape) spPx(x + (y & 1 ? 2 : -2) + ox, y + oy, false);
       }
+      bool blink = (phase == 5);                   // 闭一眼, 像"快没气了"
       spRect(15 + ox, 13 + oy, 3, 3, false);
       spRect(25 + ox, 13 + oy, 3, 3, false);
-      spPx(15 + ox, 13 + oy, true); spPx(17 + ox, 15 + oy, true);
-      spPx(17 + ox, 13 + oy, true); spPx(15 + ox, 15 + oy, true);
-      spPx(26 + ox, 13 + oy, true); spPx(27 + ox, 15 + oy, true);
-      spPx(27 + ox, 13 + oy, true); spPx(26 + ox, 15 + oy, true);
+      if (blink) {
+        spRect(15 + ox, 14 + oy, 3, 1, true);
+        spRect(25 + ox, 14 + oy, 3, 1, true);
+      } else {
+        spPx(15 + ox, 13 + oy, true); spPx(17 + ox, 15 + oy, true);
+        spPx(17 + ox, 13 + oy, true); spPx(15 + ox, 15 + oy, true);
+        // 右眼框是 25..27, 写成 26..27 会挤成一个 2x2 实心块, 两只眼不对称
+        spPx(25 + ox, 13 + oy, true); spPx(27 + ox, 15 + oy, true);
+        spPx(27 + ox, 13 + oy, true); spPx(25 + ox, 15 + oy, true);
+      }
       break;
     }
   }
