@@ -4,6 +4,8 @@ Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研�
 
 「影像质量」和「异常征象」支持调用视觉大模型，按心脏超声复核结构生成带证据帧的研究意见。当前已验证 DeepSeek `deepseek-flash`，API key 由后端读取。配置与运行步骤见[大模型复核部署说明](docs/WORKSTATION_TERMINAL.md#大模型影像质量和异常征象复核)。
 
+已有本机 `integration-e2e` 环境可运行 `./Start-DeepSeekWorkstation.ps1 -RuntimePath <部署目录>`，以当前仓库启动全部分析入口，默认网页端口 `5192`、API 端口 `8036`。分析面板提供「检查模型连接」，可核对 DeepSeek 服务连接及模型访问权限。
+
 **部署入口**：[Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)。该文档包含安装依赖、下载发布权重、迁移数据库、创建账号、启动服务和实机验收的命令。默认网页为 `http://127.0.0.1:5181/`，API 为 `http://127.0.0.1:8019/`。
 
 | 四端 | 当前部署 |

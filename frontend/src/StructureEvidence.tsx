@@ -12,24 +12,28 @@ type Job = {
 }
 type Receipt = {hint:string;sequence:number}
 
-export default function StructureEvidence({id, configured, terminal}:{id:string;configured:boolean|null;terminal:boolean}){
+export default function StructureEvidence({id, configured, terminal, refresh=0}:{id:string;configured:boolean|null;terminal:boolean;refresh?:number}){
  const [frames,setFrames]=useState<Frame[]>([])
  const [index,setIndex]=useState(0)
  const [job,setJob]=useState<Job|null>(null)
  const [receipt,setReceipt]=useState<Receipt|null>(null)
  const [busy,setBusy]=useState('')
  const [error,setError]=useState('')
+ const [historyError,setHistoryError]=useState('')
+ const segmenting=busy==='正在分割…'
 
  useEffect(()=>{
+  if(segmenting)return
   let current=true
+  setHistoryError('');setJob(null);setReceipt(null)
   Promise.all([api<{frames:Frame[]}>('/media/'+id),api<Job[]>('/media/'+id+'/analysis-jobs')])
    .then(([media,jobs])=>{
     if(!current)return
     setFrames(media.frames)
     setJob(jobs.find(item=>item.model_type==='cardiacudc_fourchamber')??null)
-   }).catch((failure:Error)=>{if(current)setError(failure.message)})
+   }).catch((failure:Error)=>{if(current)setHistoryError(failure.message)})
   return ()=>{current=false}
- },[id])
+ },[id,refresh,segmenting])
 
  async function segment(){
   setBusy('正在分割…');setError('');setReceipt(null)
@@ -56,7 +60,7 @@ export default function StructureEvidence({id, configured, terminal}:{id:string;
   <Button disabled={!configured||!frames.length||!!busy} onClick={()=>void segment()}>运行四腔分割</Button>
   {configured===false&&<p>四腔分割权重未配置。</p>}
   {busy&&<p role="status">{busy}</p>}
-  {(error||job?.error)&&<p role="alert">{error||job?.error}</p>}
+  {(error||historyError||job?.error)&&<p role="alert">{error||historyError||job?.error}</p>}
   {job?.state==='succeeded'&&job.output&&<div className="record">
    <h3>四腔结构叠图</h3>
    <p>第 {job.output.frame.frame_index+1} 帧 · {job.output.frame.timestamp_ms} ms · 模型第 {job.output.epoch} 轮</p>

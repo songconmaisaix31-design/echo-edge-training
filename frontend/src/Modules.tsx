@@ -36,7 +36,7 @@ type AnalysisJob = {
 
 const viewNames = { A4C: '心尖四腔心切面', PSAX: '胸骨旁短轴切面' }
 
-export function ViewAnalysis({id, available, detail}:{id:string;available:boolean;detail:string}){
+export function ViewAnalysis({id, available, detail, refresh=0}:{id:string;available:boolean;detail:string;refresh?:number}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('')
  const [history,setHistory]=useState<AnalysisJob[]>([])
  const [historyError,setHistoryError]=useState('')
@@ -50,9 +50,10 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
  const [input,setInput]=useState<{id:string;status:InputStatus}|null>(null)
  const [inputError,setInputError]=useState('')
  useEffect(()=>{
-  if(!id)return
+  if(!id||busy)return
   let current=true
   setInputError('')
+  setInput(null)
   setHistory([])
   setHistoryError('')
   setTerminalReceipt(null)
@@ -67,7 +68,7 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
    if(current)setInput({id,status:media.modelInputs?.stanford_view ?? {status:'unknown',detail:'影像推理条件未提供。'}})
   }).catch(e=>{if(current)setInputError(e.message)})
   return ()=>{current=false}
- },[id])
+ },[id,refresh,busy])
  const eligibility=input?.id===id?input.status:null
  async function predict(){
   setBusy(true);setError('');setTerminalError('')
@@ -138,12 +139,14 @@ export default function Modules({page,role}:{page:string;role:string}){
  const modelReady=capabilities?.model==='Stanford 切面模型'
  const modelDetail=capabilities?.modelDetail||''
  async function load(){const [p,e,c]=await Promise.all([api<Row[]>('/patients'),api<Row[]>('/examinations'),api<Row[]>('/cases')]);setPatients(p);setExams(e);setCases(c)}
- function selectCase(id:string){selectedCase.current=id;setCaseId(id);setMedia([]);setEntries([]);setActive('');setCompare('')}
+ function selectCase(id:string){if(id===caseId)return;selectedCase.current=id;setCaseId(id);setMedia([]);setEntries([]);setActive('');setCompare('')}
+ function selectMedia(id:string){sessionStorage.setItem('echo-media:'+caseId,id);setActive(id)}
  async function details(id:string){
   if(!id)return
   const [c,r]=await Promise.all([api<{media:string[]}>('/cases/'+id),api<Row[]>('/cases/'+id+'/entries')])
   if(selectedCase.current!==id)return
-  setMedia(c.media);setEntries(r);setActive(v=>c.media.includes(v)?v:c.media[0]||'');setCompare(c.media[1]||'')
+  const saved=sessionStorage.getItem('echo-media:'+id)||''
+  setMedia(c.media);setEntries(r);setActive(v=>c.media.includes(v)?v:c.media.includes(saved)?saved:c.media[0]||'');setCompare(c.media[1]||'')
  }
  async function run(action:()=>Promise<void>){setBusy(true);setError('');setNotice('');try{await action();setNotice('操作已完成')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  useEffect(()=>{void run(load)},[])
@@ -164,7 +167,7 @@ export default function Modules({page,role}:{page:string;role:string}){
  {page==='media'&&<section className="queue padded"><h2>导入影像</h2><p>MP4、AVI、MOV、WebM · 单文件不超过 64 MiB · DICOM 需独立解码接入</p><input type="file" multiple accept=".mp4,.avi,.mov,.webm" disabled={busy||current?.status!=='draft'} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void run(async()=>{for(const file of files){if(file.size>64*1024*1024)throw Error(file.name+' 超过 64 MiB');setNotice('正在上传并解析 '+file.name);const body=new FormData();body.append('media',file);body.append('case_id',caseId);const r=await fetch('/api/v1/media',{method:'POST',body});const data=await r.json();if(!r.ok){await details(caseId);throw Error(file.name+' · '+(data.detail?.message||data.detail))}}await details(caseId)})}}/></section>}
  {(page==='media'||isWork||page==='multi')&&<>
   <div className={isWork?'workbench-grid':'business-columns'}>
-   <section className="queue padded series-list"><h2>检查影像 · {media.length}</h2>{media.map((id,i)=><button className={'record '+(id===active?'selected':'')} key={id} onClick={()=>setActive(id)}><img src={'/api/v1/media/'+id+'/frames/0'} alt={'影像缩略图 '+(i+1)}/><b>影像 {i+1}</b><small>解析完成 · 待人工分类</small></button>)}{!media.length&&<p>暂无影像，请先导入。</p>}</section>
+   <section className="queue padded series-list"><h2>检查影像 · {media.length}</h2>{media.map((id,i)=><button className={'record '+(id===active?'selected':'')} key={id} onClick={()=>selectMedia(id)}><img src={'/api/v1/media/'+id+'/frames/0'} alt={'影像缩略图 '+(i+1)}/><b>影像 {i+1}</b><small>解析完成 · 待人工分类</small></button>)}{!media.length&&<p>暂无影像，请先导入。</p>}</section>
    <section className="queue padded">
     {active?<Player key={active} id={active}/>:<div className="empty-state">当前检查暂无可显示影像</div>}
     {!isWork&&active&&hasExam&&<Button variant="outline" asChild><a href={structureEvidenceHref(caseId,active)}>打开四腔分割</a></Button>}
@@ -172,9 +175,9 @@ export default function Modules({page,role}:{page:string;role:string}){
    {isWork&&<section className="queue padded"><h2>AI 分析结果</h2>
     <div className="tabs">{['切面识别','影像质量','心脏结构','异常征象'].map(t=><Button key={t} variant={tab===t?'default':'outline'} onClick={()=>setTab(t)}>{t}</Button>)}</div>
     <div className="availability"><b>{tab} · {tab==='切面识别'?capability:tab==='心脏结构'?structureCapability:reviewCapability}</b></div>
-    {tab==='切面识别'?<ViewAnalysis key={active} id={active} available={modelReady} detail={modelDetail}/>:tab==='心脏结构'?
-     (active&&hasExam?<StructureEvidence key={active} id={active} configured={capabilities?.structureConfigured??null} terminal={!!capabilities?.terminalConfigured}/>:<p>请选择正式检查中已导入的影像。</p>):
-     active&&hasExam?<MedicalReview key={active+'-'+tab} id={active} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'}/>:<p>请选择正式检查中已导入的影像。</p>}
+    {!(active&&hasExam)?<p>请选择正式检查中已导入的影像。</p>:tab==='切面识别'?<ViewAnalysis key={active} id={active} available={modelReady} detail={modelDetail} refresh={capabilityRevision}/>:tab==='心脏结构'?
+     <StructureEvidence key={active} id={active} configured={capabilities?.structureConfigured??null} terminal={!!capabilities?.terminalConfigured} refresh={capabilityRevision}/>:
+     <MedicalReview key={active+'-'+tab} id={active} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'} refresh={capabilityRevision}/>}
    </section>}
   </div>
   {page==='multi'&&<section className="queue padded"><h2>对照影像</h2><select value={compare} onChange={e=>setCompare(e.target.value)}><option value="">选择第二段影像</option>{media.map((id,i)=><option key={id} value={id}>影像 {i+1}</option>)}</select>{active&&compare&&<div className="business-columns"><Player key={'a'+active} id={active}/><Player key={'b'+compare} id={compare}/></div>}<p>资料覆盖情况由医生记录。此页面不生成临床完整性评分。</p></section>}

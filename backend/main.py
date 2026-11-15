@@ -46,6 +46,13 @@ def capabilities():
             "reviewConfigured": review is not None, "reviewModel": review.model if review else None,
             "reviewDetail": review_detail}
 
+@app.get("/api/v1/review-status")
+def review_status(user=Depends(current)):
+    detail, config = medical_review.configuration()
+    if config is None:
+        return {"available": False, "detail": detail}
+    return medical_review.connection_status(config)
+
 @app.post("/api/v1/media", status_code=201)
 def import_media(media: UploadFile = File(...), case_id: int = Form(...), user=Depends(current)):
     suffix = Path(media.filename or "").suffix.lower()

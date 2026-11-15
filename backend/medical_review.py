@@ -2,6 +2,7 @@ import base64
 from bisect import bisect_left
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Annotated, Literal
@@ -76,6 +77,23 @@ class Configuration:
     key: str = field(repr=False)
 
 
+def transport_failure(exc):
+    category = type(exc).__name__
+    cause = type(exc.__cause__).__name__ if exc.__cause__ else "none"
+    logging.getLogger(__name__).warning("Vision service transport failed: type=%s cause=%s", category, cause)
+    if isinstance(exc, httpx.ConnectTimeout):
+        return 504, "连接视觉模型服务超时，请检查网络连接后重新分析。"
+    if isinstance(exc, httpx.ReadTimeout):
+        return 504, "等待视觉模型结果超时，请稍后重新分析。"
+    if isinstance(exc, httpx.ConnectError):
+        return 502, "无法建立视觉模型连接，请检查 DNS、网络代理和 HTTPS 连接。"
+    if isinstance(exc, (httpx.ReadError, httpx.RemoteProtocolError)):
+        return 502, "视觉模型响应连接中断，本次分析未完成，请重新分析。"
+    if isinstance(exc, httpx.WriteError):
+        return 502, "发送影像到视觉模型时连接中断，请检查网络后重新分析。"
+    return 502, f"视觉模型网络请求失败（{category}），请检查网络后重新分析。"
+
+
 def configuration():
     base_url = os.environ.get("ECHO_REVIEW_BASE_URL", "").strip()
     model = os.environ.get("ECHO_REVIEW_MODEL", "").strip()
@@ -92,6 +110,27 @@ def configuration():
     if len(model) > 100 or len(key) > 4096:
         return "视觉模型配置格式无效。", None
     return "视觉模型已配置，运行结果将保存在当前检查。", Configuration(base_url.rstrip("/") + "/chat/completions", model, key)
+
+
+def connection_status(config):
+    try:
+        with httpx.Client(timeout=httpx.Timeout(10, connect=5), follow_redirects=False) as client:
+            response = client.get(config.endpoint.removesuffix("/chat/completions") + "/models",
+                                  headers={"Authorization": "Bearer " + config.key})
+    except httpx.RequestError as exc:
+        return {"available": False, "detail": transport_failure(exc)[1]}
+    if response.status_code in (401, 403):
+        return {"available": False, "detail": "视觉模型鉴权失败，请检查后端 API key 和访问权限。"}
+    if response.status_code != 200:
+        return {"available": False, "detail": f"视觉模型状态接口返回 HTTP {response.status_code}。"}
+    try:
+        data = response.json()["data"]
+        if not isinstance(data, list) or any(not isinstance(item, dict) or not isinstance(item.get("id"), str) for item in data):
+            raise ValueError("模型列表格式无效")
+        available = any(item["id"] == config.model for item in data)
+    except (ValueError, KeyError, TypeError):
+        return {"available": False, "detail": "视觉模型服务未返回有效的模型列表。"}
+    return {"available": available, "detail": "服务连接及模型访问权限正常，图像分析以实际运行结果为准。" if available else "当前账户无法访问配置的视觉模型，请检查模型名称和权限。"}
 
 
 def read_frames(folder):
@@ -147,10 +186,9 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
     try:
         with httpx.Client(timeout=httpx.Timeout(180, connect=15), follow_redirects=False) as client:
             response = client.post(config.endpoint, headers={"Authorization": "Bearer " + config.key}, json=payload)
-    except httpx.TimeoutException:
-        raise HTTPException(504, "视觉模型响应超时，请稍后重新分析。") from None
-    except httpx.RequestError:
-        raise HTTPException(502, "视觉模型服务连接失败，请检查网络和 API 地址。") from None
+    except httpx.RequestError as exc:
+        status, message = transport_failure(exc)
+        raise HTTPException(status, message) from None
     if response.status_code in (401, 403):
         raise HTTPException(502, "视觉模型鉴权失败，请检查后端 API key 和模型访问权限。")
     if response.status_code == 429:

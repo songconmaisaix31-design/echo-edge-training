@@ -1,4 +1,4 @@
-param([int]$Port = 8007)
+param([int]$Port = 8019, [ValidateSet('127.0.0.1','0.0.0.0')][string]$Bind = '127.0.0.1')
 $ErrorActionPreference = 'Stop'
 $work = Split-Path -Parent $PSScriptRoot
 
@@ -19,7 +19,7 @@ if (!$apiPython) { $apiPython = Join-Path $work 'api-venv/Scripts/python.exe' }
 $apiPython = (Resolve-Path -LiteralPath $apiPython).Path
 Push-Location (Join-Path $PSScriptRoot 'backend')
 try {
-    & $apiPython -m uvicorn main:app --host 127.0.0.1 --port $Port
+    & $apiPython -m uvicorn main:app --host $Bind --port $Port
     if ($LASTEXITCODE -ne 0) { throw "Backend exited ($LASTEXITCODE)" }
 } finally {
     Pop-Location

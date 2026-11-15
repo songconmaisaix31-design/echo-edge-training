@@ -1,4 +1,4 @@
-param([int]$ApiPort = 8019, [int]$WebPort = 5181)
+param([int]$ApiPort = 8019, [int]$WebPort = 5181, [ValidateSet('127.0.0.1','0.0.0.0')][string]$Bind = '127.0.0.1')
 $ErrorActionPreference = 'Stop'
 if ($ApiPort -eq $WebPort) { throw 'API and Web ports must be different.' }
 foreach ($port in @($ApiPort, $WebPort)) {
@@ -9,7 +9,7 @@ foreach ($port in @($ApiPort, $WebPort)) {
 $state = Join-Path (Split-Path -Parent $PSScriptRoot) 'local-services'
 New-Item -ItemType Directory -Path $state -Force | Out-Null
 $run = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-$api = Start-Process pwsh -WorkingDirectory $PSScriptRoot -ArgumentList "-NoProfile -File Start-StanfordBackend.ps1 -Port $ApiPort" -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $state "$run-api.out") -RedirectStandardError (Join-Path $state "$run-api.err")
+$api = Start-Process pwsh -WorkingDirectory $PSScriptRoot -ArgumentList "-NoProfile -File Start-StanfordBackend.ps1 -Port $ApiPort -Bind $Bind" -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $state "$run-api.out") -RedirectStandardError (Join-Path $state "$run-api.err")
 $deadline = (Get-Date).AddSeconds(15)
 do {
     if ($api.HasExited) { throw "Backend exited. Check $state/$run-api.err" }

@@ -18,7 +18,7 @@ export default function Diagnosis({route}:{route:string}){
  const [,examId='',panel,mediaId=''] = route.split('/')
  const [exams,setExams] = useState<Exam[]|null>(null)
  const [data,setData] = useState<ExamMedia|null>(null)
- const [selection,setSelection] = useState(mediaId)
+ const [selection,setSelection] = useState(mediaId||sessionStorage.getItem('echo-media:'+examId)||'')
  const [section,setSection] = useState<(typeof sections)[number]>(panel==='structure'?sections[1]:sections[0])
  const [error,setError] = useState('')
  const [revision,reload] = useState(0)
@@ -76,7 +76,7 @@ export default function Diagnosis({route}:{route:string}){
   <div className="diagnosis-layout">
    <section className="queue padded diagnosis-viewer" aria-label="检查影像">
     <div className="diagnosis-toolbar"><h2>超声影像</h2>
-    {active&&<div className="context-bar"><label>选择影像<select value={active} onChange={e=>setSelection(e.target.value)}>
+    {active&&<div className="context-bar"><label>选择影像<select value={active} onChange={e=>{const id=e.target.value;setSelection(id);sessionStorage.setItem('echo-media:'+examId,id);history.replaceState(null,'',section==='诊断证据'?structureEvidenceHref(examId,id):diagnosisHref(examId)+'/analysis/'+id)}}>
      {media.map((id,i)=><option key={id} value={id}>影像 {i+1} / {media.length}</option>)}
     </select></label></div>}</div>
     {active?<Player key={active} id={active}/>:

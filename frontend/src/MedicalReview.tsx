@@ -25,32 +25,43 @@ const assessments:Record<string,string>={adequate:'可评估',limited:'评估受
 const states:Record<string,string>={pending:'待处理',running:'运行中',succeeded:'成功',failed:'失败',interrupted:'已中断'}
 const confidence={low:'低',moderate:'中',high:'高'}
 
-export default function MedicalReview({id,kind,capabilities,statusFailed=false}:{id:string;kind:Kind;capabilities:Capabilities|null;statusFailed?:boolean}){
+export default function MedicalReview({id,kind,capabilities,statusFailed=false,refresh=0}:{id:string;kind:Kind;capabilities:Capabilities|null;statusFailed?:boolean;refresh?:number}){
  const [jobs,setJobs]=useState<Job[]>([])
  const [selected,setSelected]=useState<number|null>(null)
  const [loading,setLoading]=useState(true)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
+ const [historyError,setHistoryError]=useState('')
  const [evidence,setEvidence]=useState<Frame|null>(null)
  const [revision,reload]=useState(0)
+ const [checking,setChecking]=useState(false)
+ const [connection,setConnection]=useState<{available:boolean;detail:string}|null>(null)
  const job=jobs.find(item=>item.id===selected)??jobs[0]
  const result=job?.state==='succeeded'?job.output:null
 
  useEffect(()=>{
+  if(busy)return
   let current=true
-  setLoading(true);setError('');setJobs([]);setSelected(null);setEvidence(null)
+  setLoading(true);setHistoryError('');setJobs([]);setSelected(null);setEvidence(null)
   api<Job[]>('/media/'+id+'/analysis-jobs').then(history=>{
    if(current)setJobs(history.filter(item=>item.model_type==='llm_'+kind))
-  }).catch(failure=>{if(current)setError((failure as Error).message)})
+  }).catch(failure=>{if(current)setHistoryError((failure as Error).message)})
    .finally(()=>{if(current)setLoading(false)})
   return()=>{current=false}
- },[id,kind,revision])
+ },[id,kind,revision,refresh,busy])
+
+ async function checkConnection(){
+  setChecking(true);setConnection(null)
+  try{setConnection(await api<{available:boolean;detail:string}>('/review-status'))}
+  catch(failure){setConnection({available:false,detail:(failure as Error).message})}
+  finally{setChecking(false)}
+ }
 
  async function analyze(){
   setBusy(true);setError('');setEvidence(null)
   try{
    const created=await api<Job>('/media/'+id+'/review-jobs',{kind})
-   setJobs(history=>[created,...history]);setSelected(created.id)
+   setJobs(history=>[created,...history.filter(item=>item.id!==created.id)]);setSelected(created.id)
   }catch(failure){setError((failure as Error).message)}
   finally{setBusy(false)}
  }
@@ -62,16 +73,19 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
   <div className="tabs">
    <Button disabled={!capabilities?.reviewConfigured||loading||busy} onClick={()=>void analyze()}>{busy?'正在分析…':'运行'+labels[kind]+'分析'}</Button>
    <Button variant="outline" disabled={busy||loading} onClick={()=>reload(value=>value+1)}>刷新分析记录</Button>
+   <Button variant="outline" disabled={busy||checking||!capabilities?.reviewConfigured} onClick={()=>void checkConnection()}>{checking?'正在检查连接…':'检查模型连接'}</Button>
   </div>
+  {connection&&<p role={connection.available?'status':'alert'}>{connection.detail}</p>}
   {busy&&<p role="status">正在提交影像帧并等待模型结果…</p>}
   {loading&&<p role="status">正在读取分析记录…</p>}
   {error&&<p role="alert">{error}</p>}
+  {historyError&&<p role="alert">读取分析记录失败：{historyError}</p>}
   {jobs.length>0&&<label>分析记录<select value={job?.id??''} disabled={busy} onChange={event=>{setSelected(Number(event.target.value));setEvidence(null)}}>
    {jobs.map(item=><option key={item.id} value={item.id}>#{item.id} · {new Date(item.created).toLocaleString()} · {states[item.state]||item.state}</option>)}
   </select></label>}
   {job&&<p>任务 #{job.id} · {states[job.state]||job.state}</p>}
   {job?.error&&<p role="alert">{job.error}</p>}
-  {!loading&&!job&&!error&&<p>当前影像尚无{labels[kind]}分析记录。</p>}
+  {!loading&&!job&&!error&&!historyError&&<p>当前影像尚无{labels[kind]}分析记录。</p>}
   {result&&<div className="medical-review-result">
    <h3>{assessments[result.assessment]||result.assessment}</h3>
    <p>{result.summary}</p>
