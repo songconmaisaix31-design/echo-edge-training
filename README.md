@@ -1,6 +1,6 @@
 # Echo Edge 儿童心超研究工作站
 
-Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研究模型，通过 USB 串口与 ESP32-S3 终端通信。在网页创建检查、导入视频后，可运行 Stanford 切面识别，或选定一帧已确认属于 A4C 的影像运行 CardiacUDC 四腔分割。网页从后端读取分析记录与叠图，检查创建者或管理员可以发送提示并查看终端接收回执。
+Echo Edge 可在 Windows 电脑或 Linux 服务器上运行网页工作站、FastAPI、SQLite 和研究模型。在网页创建检查、导入视频后，可运行 Stanford 切面识别，或选定一帧已确认属于 A4C 的影像运行 CardiacUDC 四腔分割。网页从后端读取分析记录与叠图。Windows 本机部署还可通过 USB 串口连接 ESP32-S3，检查创建者或管理员可以发送提示并查看终端接收回执。
 
 「影像质量」和「异常征象」支持调用视觉大模型，按心脏超声复核结构生成带证据帧的研究意见。当前已验证 DeepSeek `deepseek-flash`，API key 由后端读取。配置与运行步骤见[大模型复核部署说明](docs/WORKSTATION_TERMINAL.md#大模型影像质量和异常征象复核)。
 
@@ -10,9 +10,11 @@ Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研�
 
 **公网部署**：[香港工作站](https://echo.davidwang.space/) · [Linux 部署、维护与验收说明](docs/HONGKONG_DEPLOYMENT.md)。服务器使用 Nginx HTTPS、systemd、持久 SQLite 和 CPU 模型环境；DeepSeek 凭据仅保存在后端。云端没有连接本机 USB 串口。
 
+**HTML 展示版**：[Vercel 只读展示](https://echo-edge-html.vercel.app/) · [HTML 导出、发布与验证](docs/HTML_EXPORT.md)。页面保留导出时的真实检查、影像帧、分割叠图和分析历史，可切换检查与播放影像；上传、重新分析及修改操作已禁用。生成的含数据 HTML 不提交到 Git。
+
 | 四端 | 当前部署 |
 | --- | --- |
-| 网页 | `frontend/`，通过本机 HTTP 访问 API，提供检查、阅片、四腔叠图和终端回执 |
+| 网页 | `frontend/`，通过 HTTP/HTTPS 访问 API，提供检查、阅片、四腔叠图；本机部署可显示终端回执 |
 | API | `backend/`，处理权限、媒体原件、SQLite 分析记录及串口通信 |
 | 模型 | [Stanford 切面研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10) 与 [CardiacUDC 四腔分割研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1) |
 | 终端 | ESP32-S3 运行 EdgeTerminal，经 USB 串口接收 `HINT` 并返回 `ACK` |

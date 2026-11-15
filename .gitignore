@@ -89,5 +89,8 @@ htmlcov/
 !/frontend/package-lock.json
 !/frontend/tsconfig*.json
 
+# 静态 HTML 发布配置需要入库
+!/deploy/vercel-html.json
+
 # 面板固件的编译产物 (elf/map/merged 合计 30MB+, 不该进仓库)
 firmware/*/build/
