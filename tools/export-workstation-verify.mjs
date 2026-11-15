@@ -9,6 +9,9 @@ const {chromium}=require('playwright');
 const input=process.argv[2]||'work/html-export/index.html';
 const remote=/^https?:/.test(input);
 const url=remote?input:pathToFileURL(resolve(input)).href;
+// 远程单文件含全部影像，可通过环境变量调整导航上限；交互断言保持 30 秒。
+const navigationTimeout=remote?Number(process.env.ECHO_EXPORT_NAVIGATION_TIMEOUT_MS||120000):30000;
+assert(Number.isInteger(navigationTimeout)&&navigationTimeout>=1000&&navigationTimeout<=600000,'ECHO_EXPORT_NAVIGATION_TIMEOUT_MS 必须是 1000 至 600000 的整数');
 if(!remote){
   const raw=await readFile(resolve(input),'utf8');
   assert(!/(?:C:|D:)[\\/]|echo_session|Bearer |sk-[A-Za-z0-9]{12}/.test(raw));
@@ -18,13 +21,26 @@ if(!remote){
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'zh-CN',offline:!remote});
 const page=await context.newPage();
+page.setDefaultTimeout(30000);
+page.setDefaultNavigationTimeout(navigationTimeout);
 const errors=[],network=[];
 page.on('pageerror',error=>errors.push(error.message));
 page.on('request',request=>{if(/^https?:/.test(request.url())&&!(remote&&request.isNavigationRequest()&&new URL(request.url()).origin===new URL(url).origin))network.push(request.url());});
 const checked=[];
+const navigations=[];
+async function navigate(label,action) {
+  const started=performance.now();
+  let completed=false;
+  try {await action();completed=true;}
+  finally {
+    const record={label,completed,elapsedMs:Math.round(performance.now()-started),timeoutMs:navigationTimeout};
+    navigations.push(record);
+    console.log(JSON.stringify({navigation:record}));
+  }
+}
 async function images() {await page.waitForFunction(()=>[...document.querySelectorAll('img[src]')].every(image=>image.complete&&image.naturalWidth>0));}
 try {
-  await page.goto(url);
+  await navigate('首次加载',()=>page.goto(url));
   await page.getByRole('heading',{name:'临床工作台',exact:true}).waitFor();
   const info=await page.evaluate(()=>{
     const data=JSON.parse(document.getElementById('offline-data').textContent);
@@ -87,7 +103,7 @@ try {
         }
       }
     }
-    await page.reload();await images();
+    await navigate('检查 #'+exam.id+' 影像 '+(exam.media.indexOf(mediaId)+1)+' 刷新',()=>page.reload());await images();
     assert.equal(await page.locator('.cine[data-player]').first().getAttribute('data-player'),mediaId);
     assert.equal(await page.getByLabel('当前检查',{exact:true}).inputValue(),String(exam.id));
     checked.push('检查 #'+exam.id+' 影像 '+(exam.media.indexOf(mediaId)+1)+' 模型结果/历史/刷新保持');
@@ -107,12 +123,12 @@ try {
   await page.getByRole('button',{name:'暂停',exact:true}).click();
   checked.push('53帧逐帧/时间轴/播放/暂停');
   await page.getByRole('button',{name:'心脏结构',exact:true}).click();
-  await page.reload();await images();
+  await navigate('检查 #'+sample.id+' 四腔分割刷新',()=>page.reload());await images();
   assert.equal(await page.getByLabel('当前检查',{exact:true}).inputValue(),String(sample.id));
   checked.push('刷新后保留检查与面板');
   assert.deepEqual(errors,[]);assert.deepEqual(network,[]);
-  console.log(JSON.stringify({ok:true,mode:remote?'public-url':'offline-file',checks:checked,snapshots:info.snapshots,images:info.images,externalRequests:network.length,pageErrors:errors.length}));
+  console.log(JSON.stringify({ok:true,mode:remote?'public-url':'offline-file',checks:checked,snapshots:info.snapshots,images:info.images,externalRequests:network.length,pageErrors:errors.length,navigations}));
 } catch(error) {
-  console.error(JSON.stringify({completed:checked,pageErrors:errors,heading:await page.locator('h1').allTextContents(),selectLabels:await page.locator('select').evaluateAll(selects=>selects.map(select=>select.closest('label')?.childNodes[0]?.textContent))}));
+  console.error(JSON.stringify({completed:checked,pageErrors:errors,navigations,heading:await page.locator('h1').allTextContents(),selectLabels:await page.locator('select').evaluateAll(selects=>selects.map(select=>select.closest('label')?.childNodes[0]?.textContent))}));
   throw error;
 } finally {await browser.close();}
