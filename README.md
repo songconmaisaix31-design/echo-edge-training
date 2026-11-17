@@ -1,52 +1,105 @@
-# Echo Edge 儿童心超研究工作站
+<div align="center">
 
-Echo Edge 在 Windows 电脑上运行网页工作站、FastAPI、SQLite 和研究模型，通过 USB 串口与 ESP32-S3 终端通信。在网页创建检查、导入视频后，可运行 Stanford 切面识别，或选定一帧已确认属于 A4C 的影像运行 CardiacUDC 四腔分割。网页从后端读取分析记录与叠图，检查创建者或管理员可以发送提示并查看终端接收回执。
+# Echo Edge · 儿童心超研究工作站
 
-「影像质量」和「异常征象」支持调用视觉大模型，按心脏超声复核结构生成带证据帧的研究意见。当前已验证 DeepSeek `deepseek-flash`，API key 由后端读取。配置与运行步骤见[大模型复核部署说明](docs/WORKSTATION_TERMINAL.md#大模型影像质量和异常征象复核)。
+Four ends in one room: a Windows web workstation, a FastAPI backend, research echo models on a local GPU, and an ESP32-S3 bed-side panel that takes hints over USB serial.
 
-**部署入口**：[Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)。该文档包含安装依赖、下载发布权重、迁移数据库、创建账号、启动服务和实机验收的命令。默认网页为 `http://127.0.0.1:5181/`，API 为 `http://127.0.0.1:8019/`。
+四端在同一间屋子里：Windows 上的网页工作站、FastAPI 后端、本机 GPU 上的心超研究模型，以及一块通过 USB 串口接收提示的 ESP32-S3 床旁终端。
 
-| 四端 | 当前部署 |
-| --- | --- |
-| 网页 | `frontend/`，通过本机 HTTP 访问 API，提供检查、阅片、四腔叠图和终端回执 |
-| API | `backend/`，处理权限、媒体原件、SQLite 分析记录及串口通信 |
-| 模型 | [Stanford 切面研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10) 与 [CardiacUDC 四腔分割研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1) |
-| 终端 | ESP32-S3 运行 EdgeTerminal，经 USB 串口接收 `HINT` 并返回 `ACK` |
+[![python](https://img.shields.io/badge/python-3.13.13-blue.svg)](requirements.txt)
+[![platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4.svg)](docs/WORKSTATION_TERMINAL.md)
+[![cuda](https://img.shields.io/badge/torch-2.12.1%2Bcu130-76B900.svg)](requirements.txt)
+[![weights](https://img.shields.io/badge/weights-GitHub%20Releases%20(private)-orange.svg)](docs/WORKSTATION_TERMINAL.md)
 
-已实测公开教学视频的导入、推理、结果保存、刷新回读和终端命令接收。当前流程由操作者发起分析和发送提示。[#12 正式采集反馈验收](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12) 仍需冻结双头模型、三类真实视频和连续联动记录。终端接线和硬件进度见 [ESP32-S3 终端方案与任务](docs/ESP32_TERMINAL.md)。
+<img src="firmware/echo-panel/screen.png" width="512" alt="128x64 OLED bed-side panel showing the latest echo view result" />
 
-终端固件源码、构建与烧录命令见 [firmware/](firmware/README.md)；排查记录与踩过的坑见 [docs/firmware/pitfalls.md](docs/firmware/pitfalls.md)，硬件关键事实（引脚禁区、I²C 地址、ECW 寄存器）见 [docs/firmware/hardware-facts.md](docs/firmware/hardware-facts.md)。厂商参赛套件的模块定义收在 [reference/moce-kit/](reference/README.md)。
+<sub>The 128×64 bed-side panel render from `firmware/echo-panel`: it shows the latest view result and speaks it through SYN6288E.<br/>`firmware/echo-panel` 里的 128×64 床旁面板渲染图：显示最近一次切面结论，并通过 SYN6288E 念出来。</sub>
 
-## 模型开发任务
+</div>
 
-- [#7 回收团队标注并通过数据预检](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)
-- [#8 建立独立测试入口和评价报告](https://github.com/songconmaisaix31-design/echo-edge-training/issues/8) · [评估命令和报告口径](docs/EVALUATION.md)
-- [#9 训练 EchoNet-Pediatric A4C／PSAX 基线](https://github.com/songconmaisaix31-design/echo-edge-training/issues/9) · [第 10 轮 FP16 研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10)
-- [#10 在 RTX 5060 微调团队切面与采集质量双头](https://github.com/songconmaisaix31-design/echo-edge-training/issues/10)，使用团队标注和独立测试入口。
-- [#11 导出 ONNX 并验证 RTX 5060 推理](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11)
-- [#12 将电脑推理结果接入 ESP32-S3 提示](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)
+> **How to read this page / 怎么读这页**
+> English first, then the same content in Chinese — not a summary, not a separate version. Tables keep both languages in one cell.
+> 每段英文在前，同一内容的中文紧跟在后；不是摘要，也没有单独的中文版。表格把两种语言放进同一格。
 
-## 电脑端处理
+---
 
-电脑端支持从二维多帧 DICOM cine、AVI、MP4 或 MOV 读取原始时间戳和抽帧。FFmpeg 将图像等比例缩放并填充为 `224×224` RGB。训练入口先做数据预检，报告通过后初始化 CUDA 并开始微调。
+## At a glance · 一眼看懂
 
-[Stanford 切面推理入口](docs/MODEL_EVALUATION.md#电脑端视频推理与全链路复测)使用 TensorRT FP16 和 CUDA Graph 对本地 AVI、MP4 或 MOV 输出整段切面判定、平均类别概率和抽样帧数。
+| | |
+|---|---|
+| **Problem<br/>问题** | A pediatric echo model that only lives in a notebook cannot be reviewed at the bed side, and a demo that only runs on synthetic clips says nothing about whether the pipeline handles real DICOM cine, colour Doppler or variable frame intervals.<br/>只活在 notebook 里的儿童心超模型，在床旁没法复核；只在合成片段上跑通的演示，也说明不了管线能不能处理真实 DICOM cine、彩色多普勒和变帧间隔。 |
+| **Fix<br/>做法** | Four ends wired to one database and one serial link: web (create exam, import video, read frames), API (permissions, media originals, SQLite records, serial), models (view classification, four-chamber segmentation, quality, ejection fraction), terminal (OLED panel plus voice, `HINT` in and `ACK` back).<br/>四端接到同一个数据库和一条串口上：网页（建检查、导入视频、阅帧）、API（权限、媒体原件、SQLite 记录、串口）、模型（切面识别、四腔分割、质量、射血分数）、终端（OLED 面板加语音，收 `HINT` 回 `ACK`）。 |
+| **Cost<br/>代价** | Windows x64 with PowerShell, Python 3.13, a CUDA GPU (verified here on an RTX 5060 Laptop with 8 GB), roughly 1.9 GB of CUDA PyTorch downloads, and an ESP32-S3 board for the terminal end. Weights live in this repository's Releases and need repository access.<br/>Windows x64 加 PowerShell、Python 3.13、一块 CUDA GPU（这里在 RTX 5060 Laptop 8 GB 上验证）、约 1.9 GB 的 CUDA PyTorch 下载，以及终端那端的 ESP32-S3 板子。权重在本仓库的 Release 里，需要仓库权限。 |
+| **Not<br/>不是** | Not a diagnostic device, not regulatory-cleared software, and not clinically validated: there is no clinical-accuracy evaluation yet, and every model here is labelled as research use.<br/>不是诊断设备、没有器械认证、也没有临床验证：目前没有临床准确率评估，这里每个模型都标为研究用途。 |
 
-## 环境要求
+## The problem · 问题在哪
 
-| 项目 | 已验证配置和用途 |
-| --- | --- |
-| 操作系统 | Windows x64、PowerShell |
-| Python | 64 位 Python 3.13.13 |
-| GPU | RTX 5060 Laptop 8 GB，NVIDIA 驱动 582.05。运行训练、`verify-media` 和 GPU 性能测试需要 CUDA。`preflight` 和 `train --preflight-only` 可以在 CPU 上完成 |
-| PyTorch | `torch 2.12.1+cu130`、`torchvision 0.27.1+cu130`，从 PyTorch 官方 CUDA 13.0 索引安装 |
-| 解码和表格 | `requirements.txt` 固定 PyAV、pydicom、JPEG/JPEG 2000/JPEG-LS 解码插件、Pillow 和 openpyxl 等依赖。PyAV wheel 自带 FFmpeg 运行库 |
-| 网络 | 首次安装需要能访问 PyPI 和 `download.pytorch.org`。第一次运行 GPU 路径时，TorchVision 会将预训练权重下载到指定缓存目录。可通过受控渠道预置权重 |
-| 磁盘 | CUDA 版 PyTorch 下载约 1.9 GB。安装及缓存另外占用磁盘。训练还需要给单个解包影像、临时抽帧 PNG 和检查点留出空间 |
+The loop that matters is not "get a prediction". It is: create an exam, attach the original cine, run a model, keep the frame the result came from, let a clinician read it again tomorrow, and push one line of text to a device at the bed side. Each of those steps can pass alone and break in the join.
 
-使用预编译 PyTorch wheel 时，需要兼容的 NVIDIA 驱动和 wheel 自带的 CUDA 运行库。`nvidia-smi` 用来检查驱动，下面的实际 CUDA 张量运算用来验证 PyTorch 环境。 [PyTorch 官方安装版本](https://pytorch.org/get-started/previous-versions/) · [NVIDIA CUDA 兼容性](https://docs.nvidia.com/deploy/cuda-compatibility/)
+真正要跑的环路不是"出一个预测"，而是：建检查、挂上原始 cine、跑模型、保留结论来自哪一帧、让医生明天还能重新打开，再把一行文字推到床旁的设备上。每一步单独都能过，连起来就会断。
 
-从仓库根目录执行以下 PowerShell 命令。已将 Python 3.13 设为默认时可以用 `python` 代替 `py -3.13`。
+Two constraints shape the repository. Patient video cannot enter Git, so originals, filled annotation workbooks, patient mapping tables, frame caches and run directories are all ignored, and only code, pinned dependency versions, blank templates and documents are tracked. Model weights follow the same rule: they are attached to Releases, not committed.
+
+两个约束决定了这个仓库的形状。病人影像不能进 Git，所以原始影像、填好的标注工作簿、患者关联表、抽帧缓存和训练目录都被忽略，只跟踪代码、固定的依赖版本、空白模板和文档。模型权重同理：挂在 Release 上，不提交进仓库。
+
+The rest of the design follows from the review requirement: an analysis is a job with a state, a failure keeps its reason, and the panel only ever displays the most recent finished result — it never guesses.
+
+其余设计来自复核需求：分析是一个带状态的任务，失败会保留原因，面板只显示最近一条已完成的结果——它不做猜测。
+
+## The idea · 思路
+
+| Noun · 名词 | Where · 位置 | Rule · 规则 |
+|---|---|---|
+| **Exam**<br/>检查 | `backend/clinical.py`, `frontend/` | Every analysis belongs to one exam and one patient; parameters are stored per exam, not globally.<br/>每次分析都归属一个检查和一个患儿；参数按检查保存，不做全局默认。 |
+| **Analysis job**<br/>分析任务 | `backend/analysis_jobs.py` | Asynchronous, with explicit states; an interrupted job is recovered as `interrupted`, not silently retried.<br/>异步、状态显式；中断的任务恢复为 `interrupted`，不静默重试。 |
+| **Weights**<br/>权重 | GitHub Releases | Engines, checkpoints and reports are release attachments; the inference entry re-checks GPU, TensorRT version and engine SHA-256.<br/>引擎、检查点与报告是 Release 附件；推理入口会复核 GPU、TensorRT 版本与引擎 SHA-256。 |
+| **Data boundary**<br/>数据边界 | `data/`, `work/`, `runs/` (ignored) | Originals, annotations and caches stay in the authorised environment; nothing patient-related is committed.<br/>原始影像、标注与缓存留在授权环境里；任何与患者相关的文件都不提交。 |
+| **Terminal**<br/>终端 | `firmware/edge-terminal/`, `backend/terminal_link.py` | Receives `HINT`, returns `ACK`. It does no inference and no acquisition — it is a display that talks.<br/>收 `HINT`、回 `ACK`。它不推理、不采集——是一块会说话的显示器。 |
+| **Research label**<br/>研究标签 | Releases, `docs/` | Non-commercial research use only; dataset licences are recorded, and the stricter reading wins where sources disagree.<br/>仅限非商业研究；数据集许可逐项记录，来源冲突时按更严格的口径执行。 |
+
+The practical test of the chain: import a public teaching clip, run the view model, save, refresh the page and read the result back, then send a hint and watch the terminal return its receipt. That exact sequence is the one recorded as exercised.
+
+这条链路最实际的验证方式：导入一段公开教学片段、跑切面模型、保存、刷新页面读回结果，然后发一条提示，看终端是否回执。被记为"已实测"的就是这一串动作。
+
+## Capabilities · 能力清单
+
+Models, with the numbers as recorded in this repository's own reports:
+
+模型与记录在仓库自己报告里的数字：
+
+| Model · 模型 | Data · 数据 | Recorded result · 记录的结果 | Where the record is · 记录在哪 |
+|---|---|---|---|
+| A4C/PSAX view classification<br/>切面识别 | EchoNet-Pediatric | FP16 TensorRT engine; output is the view, per-class mean probability and the number of sampled frames.<br/>FP16 TensorRT 引擎；输出切面、两类平均概率与抽样帧数。 | [docs/MODEL_EVALUATION.md](docs/MODEL_EVALUATION.md), release `stanford-fp16-epoch10` |
+| LV endocardium segmentation<br/>左室分割 | EchoNet-Pediatric fold 0 — 186 patients, 658 videos, 1,298 traced frames<br/>EchoNet-Pediatric 折 0——186 名患儿、658 段视频、1,298 个有描迹帧 | Frame-level Dice 0.9047, IoU 0.8323; per-patient Dice 0.9074.<br/>帧级 Dice 0.9047、IoU 0.8323；按患儿平均 Dice 0.9074。 | [docs/STANFORD_LV_MODEL.md](docs/STANFORD_LV_MODEL.md), release `stanford-lv-epoch8` |
+| Four-chamber segmentation<br/>四腔分割 | CardiacUDC — 293 A4C videos, 2,257 annotated frames, two hospitals<br/>CardiacUDC——293 段 A4C 视频、2,257 张标注帧、两家医院 | Independent test (43 groups / 367 frames): LV 0.8243, LA 0.8279, RA 0.8841, RV 0.8420; foreground mean Dice 0.8446 frame-level, 0.7300 group macro.<br/>独立测试（43 组 / 367 帧）：LV 0.8243、LA 0.8279、RA 0.8841、RV 0.8420；前景平均 Dice 帧级 0.8446、组级 0.7300。 | [docs/CARDIACUDC.md](docs/CARDIACUDC.md), release `cardiacudc-fourchamber-v1` |
+| Structures, quality grade and EF<br/>结构、质量与射血分数 | CAMUS — 500 patients, 2CH/4CH, ED/ES masks, quality grades<br/>CAMUS——500 名病人、2CH/4CH、ED/ES 掩膜、质量分级 | Held-out 50 patients / 200 frames: LV endocardium Dice 0.9275, myocardium 0.8553, left atrium 0.8835, foreground mean 0.8888; image-quality patient-view macro-F1 0.591.<br/>留出 50 名病人 / 200 帧：左室心内膜 Dice 0.9275、心肌 0.8553、左房 0.8835、前景平均 0.8888；影像质量患者-视位 macro-F1 0.591。 | [docs/CAMUS.md](docs/CAMUS.md), release `camus-structure-quality-v1` |
+| EF regression<br/>EF 回归 | EchoNet-Pediatric | Patient-level MAE 3.80; AUROC 0.996 for EF < 50% on 5 positives — direction only, not a screening claim.<br/>患儿级 MAE 3.80；EF < 50% 的 AUROC 0.996 只基于 5 例阳性——只是方向性证据，不是筛查结论。 | [docs/STANFORD_EF.md](docs/STANFORD_EF.md), release `stanford-ef-epoch5` |
+
+These figures are quoted from the reports linked above. This rewrite did not re-run any training or evaluation.
+
+这些数字引自上面链接的报告。这次改写没有重跑任何训练或评估。
+
+| End · 端 | Path · 路径 | What it does · 做什么 |
+|---|---|---|
+| Web<br/>网页 | `frontend/` | React 19 + Vite: exam creation, video import and playback, four-chamber overlay, terminal receipts. Default `http://127.0.0.1:5181/`.<br/>React 19 + Vite：建检查、导入与播放视频、四腔叠图、终端回执。默认 `http://127.0.0.1:5181/`。 |
+| API<br/>接口 | `backend/` | FastAPI + SQLAlchemy + Alembic: permissions, media originals, SQLite analysis records, serial link. Default `http://127.0.0.1:8019/`.<br/>FastAPI + SQLAlchemy + Alembic：权限、媒体原件、SQLite 分析记录、串口链路。默认 `http://127.0.0.1:8019/`。 |
+| Models<br/>模型 | root scripts | `train_echo.py`, `train_stanford_lv.py`, `train_stanford_ef.py`, `train_camus.py`, `train_cardiacudc.py`, `infer_stanford.py`, `evaluate_echo.py`, `benchmark_echo.py`.<br/>训练、推理、评估与测速入口各一支脚本。 |
+| Terminal<br/>终端 | `firmware/` | ESP32-S3 EdgeTerminal plus the `echo-panel`, `ecw-*`, `sensor-hub` and `probe` sketches; Python helpers under `firmware/tools/`.<br/>ESP32-S3 的 EdgeTerminal，以及 `echo-panel`、`ecw-*`、`sensor-hub`、`probe` 几个 sketch；`firmware/tools/` 下是 Python 辅助脚本。 |
+
+## Quickstart · 快速开始
+
+### Requirements · 环境要求
+
+| Item · 项目 | Verified configuration · 已验证配置 |
+|---|---|
+| OS · 系统 | Windows x64, PowerShell<br/>Windows x64、PowerShell |
+| Python | 64-bit Python 3.13.13<br/>64 位 Python 3.13.13 |
+| GPU · 显卡 | RTX 5060 Laptop 8 GB, NVIDIA driver 582.05. Training, `verify-media` and the GPU benchmark need CUDA; `preflight` runs on CPU.<br/>RTX 5060 Laptop 8 GB、NVIDIA 驱动 582.05。训练、`verify-media` 和 GPU 测速需要 CUDA；`preflight` 可以在 CPU 上跑。 |
+| PyTorch | `torch 2.12.1+cu130`, `torchvision 0.27.1+cu130` from the official CUDA 13.0 index<br/>从 PyTorch 官方 CUDA 13.0 索引安装 |
+| Inference · 推理 | `tensorrt-cu13==10.16.1.11`, `onnx==1.22.0`, `onnxruntime-gpu==1.27.0` |
+| Disk · 磁盘 | About 1.9 GB for the CUDA PyTorch download, plus caches, extracted frames and checkpoints<br/>CUDA 版 PyTorch 下载约 1.9 GB，另需缓存、抽帧与检查点空间 |
+
+### 1. Python environment · Python 环境
 
 ```powershell
 py -3.13 -m venv .venv
@@ -54,33 +107,19 @@ $python = '.\.venv\Scripts\python.exe'
 & $python -m pip install torch==2.12.1+cu130 torchvision==0.27.1+cu130 --index-url https://download.pytorch.org/whl/cu130
 & $python -m pip install -r requirements.txt --index-url https://pypi.org/simple
 & $python -m pip check
-nvidia-smi
+```
+
+### 2. Verify the GPU path · 验证 GPU 路径
+
+```powershell
 & $python -c "import torch, torchvision; assert torch.cuda.is_available(); print(torch.__version__, torchvision.__version__, torch.version.cuda, torch.cuda.get_device_name(0)); print(torch.arange(16, device='cuda').square().sum().item())"
 ```
 
-最后一行应输出 `1240`。只做 CPU 数据预检的环境，可以把 PyTorch 安装命令换成 `torch==2.12.1+cpu torchvision==0.27.1+cpu --index-url https://download.pytorch.org/whl/cpu`。其他依赖仍从 `requirements.txt` 安装。
+The last value must be `1240`; a different number or an assertion error means the CUDA wheel and the driver do not match. For CPU-only preflight work, install the `+cpu` wheels from the CUDA-free index instead.
 
-## 下载并运行 Release 的 FP16 模型
+最后一行的值必须是 `1240`；数字不对或断言失败，说明 CUDA wheel 与驱动不匹配。只做 CPU 预检时改装 `+cpu` 的 wheel。
 
-[Stanford EchoNet-Pediatric 第 10 轮研究版](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-fp16-epoch10) 供有私有仓库访问权限的成员用于非商业研究。已验证的组合为 Windows x64、NVIDIA GeForce RTX 5060 Laptop GPU、CUDA 13 PyTorch 和 TensorRT 10.16.1.11。推理入口会核对 GPU 型号、TensorRT 版本和引擎 SHA-256。
-
-安装 GitHub CLI，用有仓库权限的账号完成 `gh auth login --hostname github.com`。首次获取代码时，在 PowerShell 执行以下命令。
-
-```powershell
-gh repo clone songconmaisaix31-design/echo-edge-training -- --branch main --single-branch
-Set-Location .\echo-edge-training
-```
-
-已有本地副本时，在仓库根目录更新 `main` 即可。
-
-按[环境要求](#环境要求)配置 CUDA 版 PyTorch 和基础依赖，再在仓库根目录安装推理依赖。
-
-```powershell
-$python = '.\.venv\Scripts\python.exe'
-& $python -m pip install 'tensorrt-cu13==10.16.1.11' 'onnx==1.22.0' 'onnxruntime-gpu==1.27.0' --index-url https://pypi.org/simple
-```
-
-下载以下两个附件到同一目录。也可以用有仓库权限的账号登录 GitHub 后，从 Release 页面直接下载这两个文件。
+### 3. Get weights and run one video · 取权重跑一段视频
 
 ```powershell
 $releaseDir = '.\work\stanford-fp16-epoch10'
@@ -89,95 +128,95 @@ gh release download stanford-fp16-epoch10 `
   --dir $releaseDir `
   --pattern 'Stanford-A4C-PSAX-TensorRT-FP16.engine' `
   --pattern 'Stanford-TensorRT-FP32-FP16-test.json'
-if ($LASTEXITCODE -ne 0) { throw 'Release 附件下载失败' }
-```
 
-将 `$video` 改为获授权的本地灰阶心超 AVI、MP4 或 MOV 路径。程序从引擎报告读取锁定参数，运行只需上述两个 Release 附件。
-
-```powershell
 $engineReport = Join-Path $releaseDir 'Stanford-TensorRT-FP32-FP16-test.json'
-$video = '.\data\sample.avi'
 & $python -X utf8 .\infer_stanford.py predict --engine-report $engineReport --video $video --precision fp16
 ```
 
-成功时输出一条 JSON，`precision` 为 `fp16`，`view` 为 `A4C` 或 `PSAX`，另有 `sampled_frames` 和两类平均概率 `probabilities`。
+A successful run prints one JSON object with `precision` `fp16`, a `view` of `A4C` or `PSAX`, `sampled_frames` and per-class `probabilities`.
 
-## Stanford 左室分割模型
+成功时输出一条 JSON，`precision` 为 `fp16`，`view` 为 `A4C` 或 `PSAX`，另有 `sampled_frames` 和两类平均概率。
 
-EchoNet-Pediatric 左室心内膜腔单帧分割模型，训练、独立测试和单帧预测入口都在 `train_stanford_lv.py`。接口约定、接口测试记录、训练配置和独立测试评分见 [Stanford 左室分割模型的接口与独立测试](docs/STANFORD_LV_MODEL.md)。
+### 4. Run the whole workstation · 跑整台工作站
 
-锁定独立测试折（原始折 0，186 名患儿、658 段视频、1,298 个有描迹帧）的帧级 Dice 为 0.9047、IoU 为 0.8323；按患儿平均的 Dice 为 0.9074、IoU 为 0.8362（A4C 0.8938 / 0.8147，PSAX 0.9151 / 0.8482）。权重、验证曲线、独立测试报告和接口测试记录通过 [stanford-lv-epoch8](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-lv-epoch8) 提供。
+The deployment walkthrough — two Python environments, migrations, the first operator account, the web and API ports, and the four-end acceptance — is in [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md). Before training on team data, run the preflight gate and read its report:
 
-## 公开数据扩展：CAMUS 与射血分数
-
-在 EchoNet-Pediatric 之外接入了 [CAMUS](docs/CAMUS.md) 公开数据（500 名病人、2CH/4CH、ED/ES 手工结构掩膜、Good/Medium/Poor 质量分级与 EF），新增多结构分割、影像质量分级和射血分数回归三项能力。数据源的可下载性、许可与引用见 [公开心超数据源调研](docs/PUBLIC_DATASETS.md)。
-
-CAMUS 独立测试（50 名留出病人、200 帧）：左室心内膜 Dice 0.9275、左室心肌 0.8553、左房 0.8835，前景平均 Dice 0.8888；影像质量患者-视位 macro-F1 0.591。EchoNet-Pediatric EF 模型患儿级 MAE 3.80，EF < 50% 异常筛查 AUROC 0.996（阳性 5 例，仅方向性证据）。模型与报告通过 [camus-structure-quality-v1](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/camus-structure-quality-v1) 与 [stanford-ef-epoch5](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/stanford-ef-epoch5) 提供。
-
-### CardiacUDC 四腔分割
-
-补充 [CardiacUDC](docs/CARDIACUDC.md)（293 段 A4C 视频、2,257 张标注帧、两家医院），把结构能力扩展到 LV / LA / RA / RV 四个腔室。许可存在标注不一致，按更严格口径限定非商业研究。独立测试（43 组 / 367 帧）：LV Dice 0.8243、LA 0.8279、RA 0.8841、RV 0.8420，前景平均 Dice 0.8446（帧级）/ 0.7300（组级宏平均）。权重与报告通过 [cardiacudc-fourchamber-v1](https://github.com/songconmaisaix31-design/echo-edge-training/releases/tag/cardiacudc-fourchamber-v1) 提供。
-
-## 数据交付
-
-请把 [Excel 标注模板](templates/儿童心超标注模板.xlsx) 和 [训练数据交付要求](docs/TRAINING_DATA.md) 发给团队。首批优先收集拟部署设备上的完整去标识儿童经胸心超检查，包含灰阶、彩色多普勒、低质量画面、过渡和补扫。由儿科心超专家先确认切面和采集质量标签定义，再交付源影像和已复核的 Excel。
-
-使用斯坦福公开研究数据时，见 [EchoNet-Pediatric 训练准备](docs/ECHONET_PEDIATRIC.md)。
-
-第 01 批 8 段团队视频为演示录屏。[工程清洗报告](docs/batch-01/cleaning-report.md)和[抽帧索引](docs/batch-01/team-selected-frames.csv)用于解码和预处理联调。[专家交接说明](docs/batch-01/expert-handoff.md)适用于后续收到的真实心超 cine。
-
-把数据放在院方允许的目录。下面使用仓库内被 Git 忽略的 `data/` 作为路径示例。`$media` 可以指向影像目录、ZIP 或单个影像。`$labels` 指向填好的工作簿。Excel `relative_path` 从影像目录或 ZIP 根目录填写。
-
-## 先检查，再训练
+完整部署步骤——两个 Python 环境、迁移、首个操作员账号、网页与 API 端口、四端验收——在 [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md)。用团队数据训练之前，先跑预检闸门并读报告：
 
 ```powershell
-$python = '.\.venv\Scripts\python.exe'
-$media = '.\data\cine'
-$labels = '.\data\team_annotations.xlsx'
-$config = @(
-  '--media', $media, '--labels', $labels,
-  '--cache-dir', '.\work\cache', '--run-dir', '.\runs\finetune-01',
-  '--sample-fps', '10', '--max-frames-per-segment', '8',
-  '--val-fraction', '0.2', '--seed', '42', '--batch-size', '8',
-  '--epochs', '12', '--head-only-epochs', '2',
-  '--head-lr', '0.0003', '--backbone-lr', '0.00003'
-)
 & $python -X utf8 .\train_echo.py train @config --preflight-only
 ```
 
-预检报告默认为 `runs/finetune-01.preflight.json`，可用 `--report` 指定训练目录外的路径。检查包括文件是否存在及可读、确认区间是否抽到帧、标签字典及标注是否有效、同一患儿是否跨组，以及训练标签与验证任务覆盖。报告包含工作表行号、影像相对路径和源帧时间。退出码 `0` 表示通过，`1` 表示发现数据问题。只预检时可以使用尚未创建的训练目录。
+Exit code `0` means the data passed; `1` means the report found a problem. The report names the worksheet row, the relative media path and the source frame time.
 
-人工复核报告后，在同一个 PowerShell 会话运行正式命令。训练会重新执行预检，报告通过后直接使用已校验的标注和分组。每次正式训练应指定新的 `--run-dir`。
+退出码 `0` 表示数据通过；`1` 表示报告发现问题。报告会指出工作表行号、影像相对路径和源帧时间。
 
-```powershell
-& $python -X utf8 .\train_echo.py train @config
+## Documentation · 文档
+
+| Doc · 文档 | Read it when · 什么时候读 |
+|---|---|
+| [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md) | Deploying the four ends on one Windows machine.<br/>在一台 Windows 上部署四端。 |
+| [docs/MODEL_EVALUATION.md](docs/MODEL_EVALUATION.md) | Locked evaluation, ONNX checks and the video inference path.<br/>锁定模型后的评估、ONNX 核对与视频推理路径。 |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Per-patient evaluation and the read-only Stanford fold review.<br/>按患儿评估与 Stanford 分折只读核查。 |
+| [docs/CAMUS.md](docs/CAMUS.md), [docs/CARDIACUDC.md](docs/CARDIACUDC.md) | The two public datasets and their segmentations.<br/>两个公开数据集与对应分割能力。 |
+| [docs/ECHONET_PEDIATRIC.md](docs/ECHONET_PEDIATRIC.md), [docs/STANFORD_LV_MODEL.md](docs/STANFORD_LV_MODEL.md), [docs/STANFORD_EF.md](docs/STANFORD_EF.md) | Stanford-side training prep, the LV model, the EF model.<br/>Stanford 侧训练准备、左室模型、EF 模型。 |
+| [docs/TRAINING_DATA.md](docs/TRAINING_DATA.md) | What to deliver and how the workbook is filled.<br/>交什么数据、工作簿怎么填。 |
+| [docs/DOCTOR_REVIEW.md](docs/DOCTOR_REVIEW.md) | The clinician review flow.<br/>医生复核流程。 |
+| [docs/PUBLIC_DATASETS.md](docs/PUBLIC_DATASETS.md) | Availability, licences and citations for every public source.<br/>每个公开数据源的可下载性、许可与引用。 |
+| [docs/ESP32_TERMINAL.md](docs/ESP32_TERMINAL.md), [docs/firmware/](docs/firmware) | Terminal plan, wiring, pin limits, I²C addresses, ECW registers and pitfalls.<br/>终端方案、接线、引脚禁区、I²C 地址、ECW 寄存器与踩坑记录。 |
+| [docs/V1_E2E_ACCEPTANCE.md](docs/V1_E2E_ACCEPTANCE.md) | The full end-to-end acceptance record, module by module.<br/>逐模块的全系统端到端验收记录。 |
+| [docs/batch-01/](docs/batch-01) | The first batch: cleaning report, selected-frame index, expert handoff.<br/>第 01 批：清洗报告、抽帧索引、专家交接。 |
+| [reference/README.md](reference/README.md) | The vendor competition kit's module definitions and wiring.<br/>厂商参赛套件的模块定义与接线。 |
+
+## Repository layout · 仓库结构
+
+```text
+echo-edge-training/
+├── backend/                # FastAPI app, SQLAlchemy models, Alembic migrations, tests
+├── frontend/               # React 19 + Vite workstation UI
+├── firmware/
+│   ├── edge-terminal/      # ESP32-S3: receives HINT, returns ACK
+│   ├── echo-panel/         # 128×64 OLED + SYN6288E voice panel
+│   └── ecw-*/ sensor-hub/ probe/ tools/
+├── Start-EchoEdge.ps1      # local launcher; -Lan and Stanford variants next to it
+├── train_echo.py           # team dual-head fine-tune + preflight gate
+├── train_stanford_lv.py    # left-ventricle segmentation
+├── train_stanford_ef.py    # ejection fraction regression
+├── train_camus.py          # CAMUS structures, quality, EF
+├── train_cardiacudc.py     # four-chamber segmentation
+├── infer_stanford.py       # TensorRT FP16 video inference
+├── evaluate_echo.py        # locked evaluation and ONNX checks
+├── benchmark_echo.py       # decode/preprocess/GPU timing
+├── echo_dicom.py           # DICOM cine reading
+├── templates/              # blank annotation workbook
+├── docs/                   # deployment, models, data, firmware, acceptance
+└── reference/moce-kit/     # vendor kit module definitions
 ```
 
-默认前两轮只训练两个分类头，之后解冻骨干最后三个特征模块。训练帧按每名患儿的已抽取帧数倒数加权，保持各患儿在抽样中的总权重相同。训练输出 `best.pt`、`config.json` 和 `metrics.json`，记录标签顺序、患儿划分、训练参数、每轮耗时和峰值显存。训练日志中的验证指标按帧计算。锁定模型和阈值后的片段级评估与导出见 [独立评估与 ONNX 核对](docs/MODEL_EVALUATION.md)。
+## Status · 状态
 
-按患儿评估及 Stanford 分折只读核查的 `team` 和 `stanford` 子命令见 [心超模型独立评估](docs/EVALUATION.md)。
+Recorded as exercised: importing public teaching videos, running inference, saving results, reading them back after a refresh, and the terminal receiving a command. `docs/V1_E2E_ACCEPTANCE.md` records 6 backend pytest cases passing plus a TypeScript and Vite build, with one module left as BLOCKED — the exam-switch control was never asserted in the browser.
 
-## 单独验证影像和测速
+记为已实测的部分：导入公开教学视频、跑推理、保存结果、刷新后读回，以及终端收到命令。`docs/V1_E2E_ACCEPTANCE.md` 记录后端 pytest 6 项通过、TypeScript 与 Vite 构建通过，同时有一个模块仍是 BLOCKED——检查切换控件没有在浏览器里完成断言。
 
-先创建报告存放目录。`verify-media` 报告 DICOM 源帧号、帧时间和彩色像素，并对每个片段执行一次 CUDA 前向。该命令可使用空模板检查表头。
+Known limits, stated rather than hidden:
 
-```powershell
-New-Item -ItemType Directory -Force .\work | Out-Null
-& $python -X utf8 .\train_echo.py verify-media --media $media `
-  --template '.\templates\儿童心超标注模板.xlsx' --cache-dir '.\work\cache' `
-  --sample-fps 10 --report '.\work\media-check.json'
-```
+边界写出来而不是藏起来：
 
-`benchmark_echo.py` 对 MP4/MOV ZIP 测量解码、预处理、显存传输和 GPU 前向。默认 `--mode optimized` 使用合并的 FFmpeg 缩放与 RGB 转换、锁页内存和 CUDA Graph。加 `--mode baseline` 可以对比原路径。
+- **No clinical accuracy claim.** Nothing here has been evaluated against clinical ground truth; the models are research artefacts.
+- **Team data is not validated.** Two-dimensional colour Doppler, variable frame intervals, formal annotations and the resulting fine-tune still have to be exercised on real hospital data.
+- **Formal feedback acceptance is open.** The terminal feedback loop still needs a frozen dual-head model, three classes of real video and continuous linkage records.
+- **No CI.** The repository has no `.github/workflows`, so there is no CI badge on this page; `pytest` is run by hand. Test counts above are the numbers recorded in the acceptance document, not a run repeated for this rewrite.
+- **No licence file.** There is no `LICENSE` at the repository root; see below.
 
-```powershell
-& $python -X utf8 .\benchmark_echo.py '.\data\videos.zip' `
-  --cache-dir '.\work\cache' --sample-fps 10 --precision fp16 `
-  --mode optimized --report '.\work\benchmark.json'
-```
+- **不做临床准确率声明。** 这里的东西没有和临床真值对照评估过；模型是研究产物。
+- **团队数据没有验证。** 二维彩色多普勒、变帧间隔、正式标注以及由此得到的微调，仍需在真实院方数据上跑过。
+- **正式反馈验收还没关。** 终端反馈闭环仍需要冻结的双头模型、三类真实视频和连续联动记录。
+- **没有 CI。** 仓库里没有 `.github/workflows`，所以这页不放 CI 徽章；`pytest` 是手工跑的。上面的测试数字是验收文档里记录的数字，不是这次改写重跑的。
+- **没有许可文件。** 仓库根目录没有 `LICENSE`，见下。
 
-## 验证边界和公开内容
+## License · 许可
 
-已在 RTX 5060 上验证 CUDA 运算、真实视频解码与抽帧、常规 DICOM cine 的灰阶与彩色读取、双头前向和预检拦截。团队设备的二维彩色多普勒、变帧间隔样本、正式标注和训练结果仍需在实际数据上验证。现有模型与终端回执的验证记录见 [Windows 本机部署与四端验收](docs/WORKSTATION_TERMINAL.md)，临床准确率仍待评估。
+There is no `LICENSE` file, so the code is not offered under an open licence. Model weights, engines and reports are distributed through this repository's Releases for non-commercial research to members with repository access. Third-party datasets keep their own terms; where a source's licence is ambiguous, the stricter reading is applied.
 
-Git 版本库跟踪代码、依赖版本、空白模板和说明文档。获准共享的 Stanford 权重、推理引擎和汇总测试报告通过本私有仓库的 Release 提供。原始影像、填好的标注、患者关联表、其他私有报告和抽帧缓存应留在授权环境。`data/`、`work/` 和 `runs/` 已加入 Git 忽略规则。上传其他文件前检查 `git status`，尤其留意无扩展名的 DICOM 文件。
+仓库里没有 `LICENSE` 文件，所以代码没有以开源许可提供。模型权重、引擎与报告通过本仓库的 Release 提供给有权限的成员，仅限非商业研究。第三方数据集沿用各自条款；来源许可存在歧义时，按更严格的口径执行。
