@@ -3,6 +3,7 @@ export type Capabilities={model:string;modelDetail?:string;structureConfigured:b
 const API_BASE='/api/v1'
 const REQUEST_FAILED='请求失败，请检查输入'
 const INVALID_RESPONSE='服务返回了无法识别的响应'
+let sessionRequests=new AbortController()
 
 export function apiUrl(path:string):string{
  return API_BASE+path
@@ -32,7 +33,7 @@ function responseErrorMessage(body:unknown):string{
  return REQUEST_FAILED
 }
 
-export async function apiRequest<T=unknown>(path:string,init?:RequestInit):Promise<T>{
+async function sendRequest<T>(path:string,init?:RequestInit):Promise<T>{
  const response=await fetch(apiUrl(path),init)
  const text=await response.text()
  let body:unknown=undefined
@@ -44,8 +45,34 @@ export async function apiRequest<T=unknown>(path:string,init?:RequestInit):Promi
  return body as T
 }
 
+export function apiRequest<T=unknown>(path:string,init?:RequestInit):Promise<T>{
+ const signal=init?.signal
+  ? AbortSignal.any([sessionRequests.signal,init.signal])
+  : sessionRequests.signal
+ return sendRequest<T>(path,{...init,signal})
+}
+
+function jsonRequest(body:unknown,method:string):RequestInit{
+ return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+}
+
+export async function loginSession<T>(credentials:unknown):Promise<T>{
+ const user=await sendRequest<T>('/login',jsonRequest(credentials,'POST'))
+ sessionRequests=new AbortController()
+ return user
+}
+
+export async function logoutSession():Promise<void>{
+ sessionRequests.abort()
+ try{await sendRequest('/logout',{method:'POST'})}
+ catch(error){
+  sessionRequests=new AbortController()
+  throw error
+ }
+}
+
 export async function api<T>(path:string,body?:unknown,method='POST'):Promise<T>{
- return apiRequest<T>(path,body===undefined?undefined:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+ return apiRequest<T>(path,body===undefined?undefined:jsonRequest(body,method))
 }
 
 export function apiUpload<T=unknown>(path:string,form:FormData):Promise<T>{

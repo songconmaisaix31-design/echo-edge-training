@@ -79,6 +79,9 @@ function observePage(page, origin) {
   page.on('pageerror', error => report.browserErrors.push(error.message))
   page.on('response', response => {
     if (response.status() >= 500) report.browserErrors.push(`${response.status()} ${response.url()}`)
+    if (response.status() === 401 && response.url() !== `${origin}/api/v1/me`) {
+      report.browserErrors.push(`401 ${response.url()}`)
+    }
   })
   page.on('console', message => {
     if (message.type() !== 'error') return
@@ -205,13 +208,19 @@ async function checkWorkstation(origin) {
   await checkPage(page, '辅助诊断（1024px）')
   report.passed.push('未配置模型时禁用运行；两种窗口宽度通过可访问性检查')
 
+  const patientReload = page.waitForRequest(request => request.url() === `${origin}/api/v1/patients/${patientId}`)
   await page.goto(patientUrl)
-  await heading('患儿详情').waitFor()
+  await patientReload
   await button('退出登录').click()
   await label('账号').waitFor()
   assert.equal((await page.request.get('/api/v1/cases')).status(), 401)
+  await label('账号').fill(user)
+  await label('密码').fill(password)
+  await button('登录').click()
+  await heading('基本资料').waitFor()
+  assert.equal((await page.request.get('/api/v1/cases')).status(), 200)
   assert.deepEqual(report.browserErrors, [])
-  report.passed.push('注销后会话失效；页面没有运行错误或 HTTP 5xx')
+  report.passed.push('患儿详情加载期间注销，会话失效，重新登录后恢复；页面没有运行错误或 HTTP 5xx')
   assert.equal((await page.request.get('/api/v1/panel/state')).status(), 404)
   assert.equal((await page.request.post('/api/v1/analysis-jobs/1/terminal')).status(), 404)
   assert.equal(Object.hasOwn(features, 'terminalConfigured'), false)
