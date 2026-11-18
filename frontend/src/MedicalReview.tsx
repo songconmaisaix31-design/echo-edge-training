@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react'
-import {api,type Capabilities} from './api'
+import {api,apiUrl,errorMessage,type Capabilities} from './api'
+import {analysisStateLabels as states,type AnalysisJobState} from './analysis-state'
 import {Button} from './button'
 import './MedicalReview.css'
 
@@ -19,10 +20,9 @@ type Result={
  model:string
  prompt_version:string
 }
-type Job={id:number;model_type:string;state:string;created:string;error:string|null;output:Result|null}
+type Job={id:number;model_type:string;state:AnalysisJobState;created:string;error:string|null;output:Result|null}
 const labels={quality:'影像质量',findings:'异常征象'}
 const assessments:Record<string,string>={adequate:'可评估',limited:'评估受限',uninterpretable:'无法评估',suspected_findings:'疑似征象',no_specific_finding:'未见特定征象',indeterminate:'无法判断'}
-const states:Record<string,string>={pending:'待处理',running:'运行中',succeeded:'成功',failed:'失败',interrupted:'已中断'}
 const confidence={low:'低',moderate:'中',high:'高'}
 
 export default function MedicalReview({id,kind,capabilities,statusFailed=false}:{id:string;kind:Kind;capabilities:Capabilities|null;statusFailed?:boolean}){
@@ -41,7 +41,7 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
   setLoading(true);setError('');setJobs([]);setSelected(null);setEvidence(null)
   api<Job[]>('/media/'+id+'/analysis-jobs').then(history=>{
    if(current)setJobs(history.filter(item=>item.model_type==='llm_'+kind))
-  }).catch(failure=>{if(current)setError((failure as Error).message)})
+  }).catch(failure=>{if(current)setError(errorMessage(failure))})
    .finally(()=>{if(current)setLoading(false)})
   return()=>{current=false}
  },[id,kind,revision])
@@ -51,7 +51,7 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
   try{
    const created=await api<Job>('/media/'+id+'/review-jobs',{kind})
    setJobs(history=>[created,...history]);setSelected(created.id)
-  }catch(failure){setError((failure as Error).message)}
+  }catch(failure){setError(errorMessage(failure))}
   finally{setBusy(false)}
  }
 
@@ -85,7 +85,7 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
     <p>观察置信程度（模型自评） · {confidence[item.confidence]}</p>
     <div className="medical-evidence-list">{item.evidence_frames.map(frame=><Button key={frame.frame_index} variant="outline" onClick={()=>setEvidence(frame)}>证据 · 第 {frame.frame_index+1} 帧 · {frame.timestamp_ms} ms</Button>)}</div>
    </section>)}
-   {evidence&&<figure><img src={'/api/v1/media/'+evidence.media_id+'/frames/'+evidence.frame_index} alt={'复核证据 · 第 '+(evidence.frame_index+1)+' 帧'}/><figcaption>第 {evidence.frame_index+1} 帧 · {evidence.timestamp_ms} ms</figcaption></figure>}
+   {evidence&&<figure><img src={apiUrl('/media/'+evidence.media_id+'/frames/'+evidence.frame_index)} alt={'复核证据 · 第 '+(evidence.frame_index+1)+' 帧'}/><figcaption>第 {evidence.frame_index+1} 帧 · {evidence.timestamp_ms} ms</figcaption></figure>}
    <h4>评估限制</h4><ul>{result.limitations.map((text,index)=><li key={index}>{text}</li>)}</ul>
    <h4>医生复核建议</h4><ul>{result.recommendations.map((text,index)=><li key={index}>{text}</li>)}</ul>
   </div>}

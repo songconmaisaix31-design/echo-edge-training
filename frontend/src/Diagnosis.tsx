@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react'
-import {Player,ViewAnalysis} from './Modules'
-import {api} from './api'
+import {Player,ViewAnalysis} from './MediaAnalysis'
+import {api,errorMessage} from './api'
 import {Button} from './button'
 import {diagnosisHref,structureEvidenceHref} from './diagnosis-contract'
 import StructureEvidence from './StructureEvidence'
@@ -32,7 +32,7 @@ export default function Diagnosis({route}:{route:string}){
 
  useEffect(()=>{
   let current=true
-  api<Exam[]>('/examinations').then(rows=>{if(current)setExams(rows)}).catch(e=>{if(current)setError(e.message)})
+  api<Exam[]>('/examinations').then(rows=>{if(current)setExams(rows)}).catch(e=>{if(current)setError(errorMessage(e))})
   return ()=>{current=false}
  },[revision])
 
@@ -43,7 +43,7 @@ export default function Diagnosis({route}:{route:string}){
    if(!current)return
    if(c.id!==exam.id||!Array.isArray(c.media))throw new Error('影像与当前检查的关联无法验证。')
    setData({examId:exam.id,ids:c.media})
-  }).catch(e=>{if(current)setError(e.message)})
+  }).catch(e=>{if(current)setError(errorMessage(e))})
   return ()=>{current=false}
  },[exam,revision])
 
@@ -91,7 +91,9 @@ export default function Diagnosis({route}:{route:string}){
       const last=sections.length-1
       const next=e.key==='ArrowRight'?(i+1)%sections.length:e.key==='ArrowLeft'?(i+last)%sections.length:e.key==='Home'?0:e.key==='End'?last:null
       if(next===null)return
-      e.preventDefault();setSection(sections[next]);document.getElementById('diagnosis-tab-'+next)?.focus()
+      const nextSection=sections[next]
+      if(nextSection===undefined)return
+      e.preventDefault();setSection(nextSection);document.getElementById('diagnosis-tab-'+next)?.focus()
      }}>{s}</button>)}</div>
     <div id="diagnosis-panel" role="tabpanel" aria-labelledby={'diagnosis-tab-'+sections.indexOf(section)} tabIndex={0} className="diagnosis-panel">
      {section==='AI 诊断结果'?<>
@@ -108,7 +110,7 @@ export default function Diagnosis({route}:{route:string}){
       {active&&<MedicalReview key={active+'-quality'} id={active} kind="quality" capabilities={cap} statusFailed={capError}/>}
      </>:section==='诊断证据'?<>
      {active&&capError&&<p role="alert">无法读取四腔分割模型状态。</p>}
-     {active&&<StructureEvidence key={active} id={active} configured={cap?.structureConfigured??null} terminal={!!cap?.terminalConfigured}/>}
+     {active&&<StructureEvidence key={active} id={active} configured={cap?.structureConfigured??null}/>}
      {active?<MedicalReview key={active+'-findings'} id={active} kind="findings" capabilities={cap} statusFailed={capError}/>:<p>请选择正式检查中已导入的影像。</p>}
      </>:section==='鉴别与复核'?<article className="diagnosis-card">
       <h2>鉴别诊断与复核提示</h2><p>尚未接入经过临床审核的知识规则。当前不生成鉴别诊断或医学复核建议。</p>

@@ -17,7 +17,6 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, sele
 import model_inference
 import medical_review
 import platform_db as db
-import terminal_link
 from clinical import Examination
 from model_protocol import ModelAdapter, ModelInput, ModelOutput
 
@@ -304,30 +303,6 @@ def register(app, media_folder):
         if not image.is_file():
             raise HTTPException(404, "结构叠图文件不存在")
         return FileResponse(image, media_type="image/png", headers={"Cache-Control": "no-store"})
-
-    @app.post("/api/v1/analysis-jobs/{key}/terminal")
-    def send_terminal(key: int, user=Depends(db.current)):
-        with db.Session() as session:
-            job = session.get(AnalysisJob, key)
-            if job is None:
-                raise HTTPException(404, "分析任务不存在")
-            case = db.get_case(session, job.exam_id, user)
-            if user.role != "admin" and case.owner != user.id:
-                raise HTTPException(403, "只有检查创建者或管理员可发送终端提示")
-            if job.state != "succeeded" or not job.output:
-                raise HTTPException(409, "只有成功的分析可发送到终端")
-            if job.model_type == STRUCTURE_MODEL:
-                if not (media_folder(job.media_id) / f"structure-{key}.png").is_file():
-                    raise HTTPException(409, "四腔结构叠图文件不存在")
-                hint = "MASK READY"
-            elif job.model_type == "stanford_view":
-                output = json.loads(job.output)
-                if "view" not in output or output["view"] not in ("A4C", "PSAX", None):
-                    raise HTTPException(409, "该任务没有有效的切面结果")
-                hint = terminal_link.HINTS[output["view"]]
-            else:
-                raise HTTPException(409, "当前分析类型不可发送到终端")
-        return terminal_link.send_hint(hint)
 
     @app.get("/api/v1/examinations/{key}/analysis-jobs")
     def exam_history(key: int, user=Depends(db.current)):

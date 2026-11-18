@@ -26,10 +26,6 @@ $env:ECHO_CARDIACUDC_CHECKPOINT = Join-Path $e2e 'models/cardiacudc-fourchamber-
 $env:ECHO_DATABASE_URL        = 'sqlite:///' + ((Join-Path $e2e 'integration.db') -replace '\\', '/')
 $env:ECHO_MEDIA_ROOT          = Join-Path $e2e 'media'
 
-# 串口链路与 WiFi 面板互不影响: 面板读 /api/v1/panel/state, 不占用 COM4。
-# 保留这个变量只是让前端的"发送到终端"按钮保持原有行为。
-if (!$env:ECHO_TERMINAL_PORT) { $env:ECHO_TERMINAL_PORT = 'COM4' }
-
 if (!(Test-Path $env:ECHO_API_PYTHON)) { throw "找不到 API 解释器 $env:ECHO_API_PYTHON" }
 
 $state = Join-Path $root 'local-services'
@@ -52,14 +48,13 @@ do {
 
 if (!$caps) { throw "后端 25 秒内没有就绪" }
 
-# 打印局域网地址, 直接抄进固件的 URL 命令
 $lan = Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } |
     Select-Object -ExpandProperty IPAddress
 
 Write-Output "API   http://127.0.0.1:$ApiPort/  (bind $Bind)"
 foreach ($ip in $lan) {
-    Write-Output "LAN   http://${ip}:$ApiPort/api/v1/panel/state"
+    Write-Output "LAN   http://${ip}:$ApiPort/"
 }
 Write-Output "PID   $($api.Id)  日志 $state/$stamp-lan-api.*"
 Write-Output "CAPS  $($caps | ConvertTo-Json -Compress)"

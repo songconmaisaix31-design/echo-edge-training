@@ -41,7 +41,6 @@ def capabilities():
     reason, config = model_inference.configuration()
     review_detail, review = medical_review.configuration()
     return {"model": "Stanford 切面模型" if config else "unavailable", "modelDetail": reason, "formats": list(FORMATS), "maxBytes": LIMIT, "maxFrames": MAX_FRAMES,
-            "terminalConfigured": bool(os.environ.get("ECHO_TERMINAL_PORT")),
             "structureConfigured": analysis_jobs.structure_configuration() is not None,
             "reviewConfigured": review is not None, "reviewModel": review.model if review else None,
             "reviewDetail": review_detail}
@@ -201,6 +200,3 @@ analysis_jobs.register(app, media_folder)
 
 import research_reports
 research_reports.register(app)
-
-import panel
-panel.register(app)
