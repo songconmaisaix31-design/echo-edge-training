@@ -2,6 +2,7 @@ import base64
 from bisect import bisect_left
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -17,6 +18,9 @@ MAX_FRAMES = 12
 PROMPT_VERSION = "echo-review-v1"
 STEPFUN_ENDPOINT = "https://api.stepfun.com/v1/chat/completions"
 STEPFUN_MODEL = "step-3.7-flash"
+STEPFUN_QUALITY_TOKENS = 4096
+STEPFUN_FINDINGS_TOKENS = 8192
+FINDINGS_ASSESSMENTS = ("suspected_findings", "no_specific_finding", "indeterminate")
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 
 
@@ -62,9 +66,7 @@ class ReviewResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_assessment(self):
-        allowed = {"adequate", "limited", "uninterpretable"} if self.kind == "quality" else {
-            "suspected_findings", "no_specific_finding", "indeterminate",
-        }
+        allowed = ("adequate", "limited", "uninterpretable") if self.kind == "quality" else FINDINGS_ASSESSMENTS
         if self.assessment not in allowed:
             raise ValueError("结论与任务类型不一致")
         if self.assessment == "suspected_findings" and not self.observations:
@@ -155,12 +157,24 @@ recommendations 应说明医生需要复核的结构、补充切面或采集信�
 def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames):
     frame_map = {frame.index: {"media_id": identifier, "frame_index": frame.index, "timestamp_ms": frame.offsetMs} for frame in frames}
     task = "影像质量" if kind == "quality" else "异常征象"
+    schema = ReviewResult.model_json_schema()
+    response_format = {"type": "json_object"}
+    strict_findings = config.sample_hashes is not None and kind == "findings"
+    if strict_findings:
+        schema["properties"]["kind"] = {"type": "string", "enum": ["findings"]}
+        schema["properties"]["assessment"]["enum"] = list(FINDINGS_ASSESSMENTS)
+        schema["properties"]["requires_clinician_review"] = {"type": "boolean", "enum": [True]}
+        schema["$defs"]["Observation"]["properties"]["evidence_frame_indices"]["items"]["enum"] = sorted(frame_map)
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "echo_findings_review", "strict": True, "schema": schema},
+        }
     prompt = {
         "task": task, "kind": kind,
         "total_frames": metadata.frameCount,
         "duration_ms": metadata.frames[-1].offsetMs,
         "sampled_frames": [{"frame_index": frame.index, "timestamp_ms": frame.offsetMs} for frame in frames],
-        "output_schema": ReviewResult.model_json_schema(),
+        "output_schema": schema,
     }
     content = [{"type": "text", "text": json.dumps(prompt, ensure_ascii=False)}]
     for frame in frames:
@@ -169,11 +183,11 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
         content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")}})
     payload = {
         "model": config.model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}],
-        "response_format": {"type": "json_object"}, "max_tokens": 8192, "stream": False,
+        "response_format": response_format, "max_tokens": 8192, "stream": False,
     }
     if config.sample_hashes is not None:
         payload["reasoning_effort"] = "low"
-        payload["max_tokens"] = 4096
+        payload["max_tokens"] = STEPFUN_FINDINGS_TOKENS if strict_findings else STEPFUN_QUALITY_TOKENS
     try:
         with httpx.Client(timeout=httpx.Timeout(180, connect=15), follow_redirects=False) as client:
             response = client.post(config.endpoint, headers={"Authorization": "Bearer " + config.key}, json=payload)
@@ -190,6 +204,8 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
     try:
         data = response.json()
         choice = data["choices"][0]
+        if choice["finish_reason"] == "length":
+            raise HTTPException(502, "视觉模型输出超出长度限制，请重新分析。")
         if choice["finish_reason"] != "stop":
             raise ValueError("响应未完成")
         result = ReviewResult.model_validate_json(choice["message"]["content"])
@@ -197,6 +213,10 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
             raise ValueError("任务类型不一致")
         if any(index not in frame_map for item in result.observations for index in item.evidence_frame_indices):
             raise ValueError("证据帧未发送给模型")
+    except ValidationError as error:
+        types = sorted({item["type"] for item in error.errors(include_input=False, include_context=False)})
+        logging.getLogger(__name__).warning("Review schema validation failed for %s: %s", kind, ", ".join(types))
+        raise HTTPException(502, "视觉模型未返回完整且可验证的结构化结果，请重新分析。") from None
     except (ValueError, KeyError, IndexError, TypeError):
         raise HTTPException(502, "视觉模型未返回完整且可验证的结构化结果，请重新分析。") from None
     output = result.model_dump()
