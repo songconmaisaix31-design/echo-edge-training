@@ -138,6 +138,10 @@ For a local workstation that opens directly in the browser, prepare the frontend
 
 安装前后端依赖后，运行 `npm --prefix frontend run dev:local`，在 `http://127.0.0.1:5176/` 直接进入本机工作站。该模式的记录与影像保存在 `work/local-workstation/`。如果后端依赖装在独立的 Python 环境中，可以用 `ECHO_LOCAL_PYTHON` 指定解释器。
 
+To configure Stanford and CardiacUDC, set the model variables from the deployment guide in `work/local-workstation/settings.env` or in the launch environment. Use absolute file paths. The models run on the local workstation.
+
+要配置 Stanford 和 CardiacUDC，请在 `work/local-workstation/settings.env` 或启动环境中填写部署文档中的模型变量，使用文件的绝对路径。两个模型均在本机执行推理。
+
 Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
 准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
