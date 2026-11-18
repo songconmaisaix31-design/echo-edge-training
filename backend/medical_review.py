@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+import re
 from typing import Annotated, Literal
 
 import httpx
@@ -14,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 ReviewKind = Literal["quality", "findings"]
 MAX_FRAMES = 12
 PROMPT_VERSION = "echo-review-v1"
+STEPFUN_ENDPOINT = "https://api.stepfun.com/v1/chat/completions"
+STEPFUN_MODEL = "step-3.7-flash"
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 
 
@@ -74,9 +77,33 @@ class Configuration:
     endpoint: str
     model: str
     key: str = field(repr=False)
+    max_frames: int = MAX_FRAMES
+    sample_hashes: dict[str, str] | None = None
+
+
+def stepfun_configuration(key_file):
+    key_path = Path(key_file)
+    samples_path = Path(os.environ.get("ECHO_STEPFUN_SAMPLES_FILE", ""))
+    if not key_path.is_absolute() or not samples_path.is_absolute():
+        return "阶跃星辰密钥和公开样例清单须使用绝对路径。", None
+    try:
+        key = key_path.read_text(encoding="utf-8").strip()
+        samples = json.loads(samples_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "无法读取阶跃星辰密钥或公开样例清单。", None
+    if (not key or len(key) > 4096 or not isinstance(samples, dict) or len(samples) != 5
+            or any(not re.fullmatch(r"[a-f0-9]{32}", identifier) or not isinstance(digest, str)
+                   or not re.fullmatch(r"[a-f0-9]{64}", digest) for identifier, digest in samples.items())):
+        return "阶跃星辰密钥或公开样例清单无效。", None
+    return "阶跃星辰支持五段公开样例的影像复核。", Configuration(
+        STEPFUN_ENDPOINT, STEPFUN_MODEL, key, max_frames=6, sample_hashes=samples,
+    )
 
 
 def configuration():
+    key_file = os.environ.get("ECHO_STEPFUN_KEY_FILE")
+    if key_file is not None:
+        return stepfun_configuration(key_file)
     base_url = os.environ.get("ECHO_REVIEW_BASE_URL", "").strip()
     model = os.environ.get("ECHO_REVIEW_MODEL", "").strip()
     key_env = os.environ.get("ECHO_REVIEW_API_KEY_ENV", "ECHO_REVIEW_API_KEY")
@@ -94,12 +121,12 @@ def configuration():
     return "视觉模型已配置，运行结果将保存在当前检查。", Configuration(base_url.rstrip("/") + "/chat/completions", model, key)
 
 
-def read_frames(folder):
+def read_frames(folder, max_frames=MAX_FRAMES):
     try:
         metadata = MediaIndex.model_validate_json((folder / "metadata.json").read_bytes())
     except (OSError, ValidationError):
         raise HTTPException(422, "无法读取有效的视频帧索引，请重新导入影像。") from None
-    count = min(MAX_FRAMES, metadata.frameCount)
+    count = min(max_frames, metadata.frameCount)
     offsets = [frame.offsetMs for frame in metadata.frames]
     if count == 1:
         indices = [0]
@@ -144,6 +171,9 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
         "model": config.model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}],
         "response_format": {"type": "json_object"}, "max_tokens": 8192, "stream": False,
     }
+    if config.sample_hashes is not None:
+        payload["reasoning_effort"] = "low"
+        payload["max_tokens"] = 4096
     try:
         with httpx.Client(timeout=httpx.Timeout(180, connect=15), follow_redirects=False) as client:
             response = client.post(config.endpoint, headers={"Authorization": "Bearer " + config.key}, json=payload)

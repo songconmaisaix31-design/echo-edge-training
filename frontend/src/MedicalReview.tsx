@@ -33,24 +33,27 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
  const [error,setError]=useState('')
  const [evidence,setEvidence]=useState<Frame|null>(null)
  const [revision,reload]=useState(0)
+ const [allowed,setAllowed]=useState(false)
+ const sampleOnly=capabilities?.reviewSampleOnly===true
  const job=jobs.find(item=>item.id===selected)??jobs[0]
  const result=job?.state==='succeeded'?job.output:null
 
  useEffect(()=>{
   let current=true
-  setLoading(true);setError('');setJobs([]);setSelected(null);setEvidence(null)
-  api<Job[]>('/media/'+id+'/analysis-jobs').then(history=>{
-   if(current)setJobs(history.filter(item=>item.model_type==='llm_'+kind))
+  setLoading(true);setError('');setJobs([]);setSelected(null);setEvidence(null);setAllowed(false)
+  const media=sampleOnly?api<{reviewAllowed:boolean}>('/media/'+id):null
+  Promise.all([api<Job[]>('/media/'+id+'/analysis-jobs'),media]).then(([history,item])=>{
+   if(current){setJobs(history.filter(job=>job.model_type==='llm_'+kind));setAllowed(item?.reviewAllowed===true)}
   }).catch(failure=>{if(current)setError(errorMessage(failure))})
    .finally(()=>{if(current)setLoading(false)})
   return()=>{current=false}
- },[id,kind,revision])
+ },[id,kind,revision,sampleOnly])
 
  async function analyze(){
   setBusy(true);setError('');setEvidence(null)
   try{
    const created=await api<Job>('/media/'+id+'/review-jobs',{kind})
-   setJobs(history=>[created,...history]);setSelected(created.id)
+   setJobs(history=>[created,...history.filter(item=>item.id!==created.id)]);setSelected(created.id)
   }catch(failure){setError(errorMessage(failure))}
   finally{setBusy(false)}
  }
@@ -58,9 +61,9 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
  return <article className="medical-review" aria-label={labels[kind]+'大模型复核'}>
   <h2>{labels[kind]}复核</h2>
   <p>按心脏超声专业阅片结构生成 AI 研究意见，结论需医生确认。</p>
-  <p>{statusFailed?'模型状态读取失败，请刷新页面重试。':capabilities?.reviewConfigured?`将最多 12 个时间采样帧发送至 ${capabilities.reviewModel} 分析。`:capabilities?.reviewDetail||'正在读取视觉模型配置…'}</p>
+  <p>{statusFailed?'模型状态读取失败，请刷新页面重试。':sampleOnly&&!loading&&!allowed?'阶跃星辰复核仅支持本次公开样例。':capabilities?.reviewConfigured?`将最多 ${capabilities.reviewMaxFrames??12} 个时间采样帧发送至 ${capabilities.reviewModel} 分析。`:capabilities?.reviewDetail||'正在读取视觉模型配置…'}</p>
   <div className="tabs">
-   <Button disabled={!capabilities?.reviewConfigured||loading||busy} onClick={()=>void analyze()}>{busy?'正在分析…':'运行'+labels[kind]+'分析'}</Button>
+   <Button disabled={!capabilities?.reviewConfigured||(sampleOnly&&!allowed)||loading||busy} onClick={()=>void analyze()}>{busy?'正在分析…':'运行'+labels[kind]+'分析'}</Button>
    <Button variant="outline" disabled={busy||loading} onClick={()=>reload(value=>value+1)}>刷新分析记录</Button>
   </div>
   {busy&&<p role="status">正在提交影像帧并等待模型结果…</p>}

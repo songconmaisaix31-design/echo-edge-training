@@ -9,7 +9,7 @@ def demo_root():
     if any(name in os.environ for name in ("ECHO_DATABASE_URL", "ECHO_MEDIA_ROOT", "ECHO_PUBLIC_SAMPLE_ROOT")):
         raise RuntimeError("公开演示需要独立的数据库和媒体目录")
     if any(name.startswith("ECHO_REVIEW_") for name in os.environ):
-        raise RuntimeError("公开演示只使用服务器上的本地模型")
+        raise RuntimeError("公开演示的外部复核须使用阶跃星辰和获准的公开样例清单")
     directory = Path(value)
     if not directory.is_absolute() or not directory.is_dir() or directory.is_symlink():
         raise RuntimeError("公开演示目录须为独立的绝对路径")

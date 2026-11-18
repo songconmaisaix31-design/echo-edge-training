@@ -45,6 +45,8 @@ def capabilities():
     return {"model": "Stanford 切面模型" if config else "unavailable", "modelDetail": reason, "formats": list(FORMATS), "maxBytes": LIMIT, "maxFrames": MAX_FRAMES,
             "structureConfigured": analysis_jobs.structure_configuration() is not None,
             "reviewConfigured": review is not None, "reviewModel": review.model if review else None,
+            "reviewMaxFrames": review.max_frames if review else None,
+            "reviewSampleOnly": review is not None and review.sample_hashes is not None,
             "reviewDetail": review_detail}
 
 @app.post("/api/v1/media", status_code=201)
@@ -172,7 +174,10 @@ def metadata(identifier: str, user=Depends(current)):
         data = json.loads(file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         fail(500, "media_metadata_unavailable", "影像元数据无法读取。")
-    return JSONResponse({**data, **media_input_status(file.parent)}, headers={"Cache-Control": "no-store"})
+    _, review = medical_review.configuration()
+    review_allowed = review is not None and (review.sample_hashes is None or identifier in review.sample_hashes)
+    return JSONResponse({**data, **media_input_status(file.parent), "reviewAllowed": review_allowed},
+                        headers={"Cache-Control": "no-store"})
 
 @app.post("/api/v1/media/{identifier}/predict")
 def predict_view(identifier: str, user=Depends(current)):

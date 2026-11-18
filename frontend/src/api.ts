@@ -1,4 +1,4 @@
-export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;reviewConfigured?:boolean;reviewModel?:string|null;reviewDetail?:string}
+export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;reviewConfigured?:boolean;reviewModel?:string|null;reviewDetail?:string;reviewSampleOnly?:boolean;reviewMaxFrames?:number|null}
 
 const API_BASE='/api/v1'
 const REQUEST_FAILED='请求失败，请检查输入'

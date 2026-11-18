@@ -150,6 +150,10 @@ For a full public demo, build with `ECHO_DEMO_BUILD=1` and run the API as a sepa
 
 完整公网演示使用 `ECHO_DEMO_BUILD=1` 构建。API 使用独立服务，`ECHO_OPEN_DEMO_ROOT` 指向专用目录。用 Alembic 初始化 `demo.sqlite3`，用 `scripts/ensure-operator.py` 创建 `local-operator`，随后将获准公开的数据导入 `demo.sqlite3` 和 `demo-media`。访客共享演示中的修改。
 
+To enable StepFun image review, set `ECHO_STEPFUN_KEY_FILE` to a service-readable key file and `ECHO_STEPFUN_SAMPLES_FILE` to a JSON object mapping the five approved media IDs to their source MP4 SHA-256 hashes. Use absolute paths. The local launcher also reads both paths from `work/local-workstation/settings.env`.
+
+要启用阶跃星辰影像复核，将 `ECHO_STEPFUN_KEY_FILE` 指向服务可读取的密钥文件，将 `ECHO_STEPFUN_SAMPLES_FILE` 指向五个获准影像编号及其 MP4 原件 SHA-256 的 JSON 映射。使用绝对路径。本机启动器也可从 `work/local-workstation/settings.env` 读取这两个路径。
+
 Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
 准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。

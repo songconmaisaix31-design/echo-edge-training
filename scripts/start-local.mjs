@@ -12,6 +12,7 @@ const settings = existsSync(settingsFile) ? parseEnv(await readFile(settingsFile
 const modelFiles = [
   'ECHO_INFERENCE_PYTHON', 'ECHO_INFERENCE_SCRIPT', 'ECHO_ENGINE_REPORT',
   'ECHO_STANFORD_CHECKPOINT', 'ECHO_STRUCTURE_PYTHON', 'ECHO_CARDIACUDC_CHECKPOINT',
+  'ECHO_STEPFUN_KEY_FILE', 'ECHO_STEPFUN_SAMPLES_FILE',
 ]
 for (const name of modelFiles) {
   const path = process.env[name] ?? settings[name]

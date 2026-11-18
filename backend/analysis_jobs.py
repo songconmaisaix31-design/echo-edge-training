@@ -195,13 +195,32 @@ def run_review(identifier, folder, kind, user):
     detail, config = medical_review.configuration()
     if config is None:
         raise HTTPException(503, detail)
-    video = next((path for path in folder.glob("source.*") if path.is_file()), None)
-    if video is None:
+    sample_hashes = config.sample_hashes
+    if sample_hashes is not None and identifier not in sample_hashes:
+        raise HTTPException(403, "阶跃星辰复核仅支持本次公开样例。")
+    video = (folder / "source.mp4" if sample_hashes is not None
+             else next((path for path in folder.glob("source.*") if path.is_file()), None))
+    if video is None or not video.is_file():
         raise HTTPException(422, "缺少视频原件，请重新导入影像。")
-    metadata, frames = medical_review.read_frames(folder)
-    model_input = ModelInput(case.id, identifier, video, sha256(video))
-    version = "review:" + hashlib.sha256((config.endpoint + config.model + medical_review.PROMPT_VERSION).encode()).hexdigest()
-    return execute_job(model_input, user, "llm_" + kind, version,
+    fingerprint = sha256(video)
+    model_type = "llm_" + kind
+    version_input = config.endpoint + config.model + medical_review.PROMPT_VERSION
+    if sample_hashes is not None:
+        if fingerprint != sample_hashes[identifier]:
+            raise HTTPException(403, "影像与已获准复核的公开样例不一致。")
+        version_input += f":frames={config.max_frames}:low:4096"
+    version = "review:" + hashlib.sha256(version_input.encode()).hexdigest()
+    if sample_hashes is not None:
+        with db.Session() as session:
+            previous = session.scalar(select(AnalysisJob).where(
+                AnalysisJob.exam_id == case.id, AnalysisJob.media_id == identifier, AnalysisJob.model_type == model_type,
+                AnalysisJob.model_version == version, AnalysisJob.input_sha256 == fingerprint, AnalysisJob.state == "succeeded",
+            ).order_by(AnalysisJob.id.desc()).limit(1))
+            if previous is not None:
+                return serialize(previous)
+    metadata, frames = medical_review.read_frames(folder, config.max_frames)
+    model_input = ModelInput(case.id, identifier, video, fingerprint)
+    return execute_job(model_input, user, model_type, version,
                        lambda _job_id: medical_review.analyze(config, folder, identifier, kind, metadata, frames))[0]
 
 
