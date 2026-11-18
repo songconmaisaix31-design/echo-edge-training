@@ -40,4 +40,5 @@ npm --prefix frontend test
 | [#35](https://github.com/songconmaisaix31-design/echo-edge-training/issues/35)–[#42](https://github.com/songconmaisaix31-design/echo-edge-training/issues/42) | 维护数据许可与评估记录，补齐隐私和临床约束的可执行验证。 |
 | [#7](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)–[#11](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11) | 等待授权原始数据、评估协议和独立验证，再进行训练与导出。 |
 | [#44](https://github.com/songconmaisaix31-design/echo-edge-training/issues/44)、[#45](https://github.com/songconmaisaix31-design/echo-edge-training/issues/45) | 在同一次版本发布中部署前端入口和后端接口清理。 |
+| [#47](https://github.com/songconmaisaix31-design/echo-edge-training/issues/47) | 稳定香港服务器磁盘空间和运行期限，持久导入获准的四份脱敏档案及五段视频。保留登录保护，用公开样例验收两套模型和结果读回。 |
 | [#12](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)、[#43](https://github.com/songconmaisaix31-design/echo-edge-training/issues/43)、[#46](https://github.com/songconmaisaix31-design/echo-edge-training/issues/46) | 由负责人决定旧设备联动任务；按归档结果更新三份历史文档的卷首说明。 |
