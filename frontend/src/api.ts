@@ -9,6 +9,12 @@ export function apiUrl(path:string):string{
  return API_BASE+path
 }
 
+export type MediaScope='private'|'samples'
+
+export function mediaApiPath(id:string,scope:MediaScope):string{
+ return (scope==='samples'?'/public-samples/media/':'/media/')+id
+}
+
 function isRecord(value:unknown):value is Record<string,unknown>{
  return typeof value==='object'&&value!==null&&!Array.isArray(value)
 }

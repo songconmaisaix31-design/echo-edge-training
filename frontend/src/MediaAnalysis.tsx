@@ -1,14 +1,15 @@
 import {useEffect,useState} from 'react'
 import {Button} from './button'
-import {api,apiUrl,errorMessage} from './api'
+import {api,apiUrl,errorMessage,mediaApiPath,type MediaScope} from './api'
 import {analysisStateLabels,type AnalysisJobState} from './analysis-state'
 
 type InputStatus={status:string;detail:string}
 type Media={original?:{exists:boolean;format:string|null};modelInputs?:{stanford_view?:InputStatus};id:string;width:number;height:number;codec:string;frameCount:number;frames:{index:number;offsetMs:number}[]}
 
-export function Player({id}:{id:string}){
+export function Player({id,scope='private'}:{id:string;scope?:MediaScope}){
+ const path=mediaApiPath(id,scope)
  const [media,setMedia]=useState<Media|null>(null),[index,setIndex]=useState(0),[play,setPlay]=useState(false),[error,setError]=useState('')
- useEffect(()=>{let active=true;setMedia(null);setIndex(0);setPlay(false);setError('');api<Media>('/media/'+id).then(v=>{if(active)setMedia(v)}).catch(e=>{if(active)setError(errorMessage(e))});return()=>{active=false}},[id])
+ useEffect(()=>{let active=true;setMedia(null);setIndex(0);setPlay(false);setError('');api<Media>(path).then(v=>{if(active)setMedia(v)}).catch(e=>{if(active)setError(errorMessage(e))});return()=>{active=false}},[path])
  useEffect(()=>{
   if(!play||!media)return
   if(index===media.frameCount-1){setPlay(false);return}
@@ -19,7 +20,7 @@ export function Player({id}:{id:string}){
   return()=>clearTimeout(timer)
  },[play,index,media])
  const frame=media?.frames[index]
- return <div className="cine"><div className="cine-image">{media?<img src={apiUrl('/media/'+id+'/frames/'+index)} alt={'源帧 '+(index+1)}/>:<p>{error||'正在读取影像…'}</p>}</div>{media&&<><input aria-label="帧时间轴" type="range" min="0" max={media.frameCount-1} value={index} onChange={e=>{setPlay(false);setIndex(+e.target.value)}}/><div className="cine-controls"><Button variant="outline" disabled={!index} onClick={()=>{setPlay(false);setIndex(i=>i-1)}}>上一帧</Button><Button onClick={()=>{if(index===media.frameCount-1)setIndex(0);setPlay(!play)}}>{play?'暂停':'播放'}</Button><Button variant="outline" disabled={index===media.frameCount-1} onClick={()=>{setPlay(false);setIndex(i=>i+1)}}>下一帧</Button><span>{index+1} / {media.frameCount} · {frame?(frame.offsetMs/1000).toFixed(3):'—'} s</span></div><p>{media.width} × {media.height} · {media.codec}{media.original&& (media.original.exists?' · 原件已保存':' · 原件缺失，仅可阅片')}</p></>}</div>
+ return <div className="cine"><div className="cine-image">{media?<img src={apiUrl(path+'/frames/'+index)} alt={'源帧 '+(index+1)}/>:<p>{error||'正在读取影像…'}</p>}</div>{media&&<><input aria-label="帧时间轴" type="range" min="0" max={media.frameCount-1} value={index} onChange={e=>{setPlay(false);setIndex(+e.target.value)}}/><div className="cine-controls"><Button variant="outline" disabled={!index} onClick={()=>{setPlay(false);setIndex(i=>i-1)}}>上一帧</Button><Button onClick={()=>{if(index===media.frameCount-1)setIndex(0);setPlay(!play)}}>{play?'暂停':'播放'}</Button><Button variant="outline" disabled={index===media.frameCount-1} onClick={()=>{setPlay(false);setIndex(i=>i+1)}}>下一帧</Button><span>{index+1} / {media.frameCount} · {frame?(frame.offsetMs/1000).toFixed(3):'—'} s</span></div><p>{media.width} × {media.height} · {media.codec}{media.original&& (media.original.exists?' · 原件已保存':' · 原件缺失，仅可阅片')}</p></>}</div>
 }
 
 type ViewPrediction = {
@@ -40,7 +41,8 @@ type AnalysisJob = {
 
 const viewNames = { A4C: '心尖四腔心切面', PSAX: '胸骨旁短轴切面' }
 
-export function ViewAnalysis({id, available, detail}:{id:string;available:boolean;detail:string}){
+export function ViewAnalysis({id, available, detail, scope='private'}:{id:string;available:boolean;detail:string;scope?:MediaScope}){
+ const path=mediaApiPath(id,scope)
  const [busy,setBusy]=useState(false),[error,setError]=useState('')
  const [history,setHistory]=useState<AnalysisJob[]>([])
  const [historyError,setHistoryError]=useState('')
@@ -55,19 +57,19 @@ export function ViewAnalysis({id, available, detail}:{id:string;available:boolea
   setInputError('')
   setHistory([])
   setHistoryError('')
-  api<AnalysisJob[]>('/media/'+id+'/analysis-jobs').then(rows=>{
+  api<AnalysisJob[]>(path+'/analysis-jobs').then(rows=>{
    if(current)setHistory(rows.filter(job=>job.model_type==='stanford_view'))
   }).catch(e=>{if(current)setHistoryError(errorMessage(e))})
-  api<Media>('/media/'+id).then(media=>{
+  api<Media>(path).then(media=>{
    if(current)setInput({id,status:media.modelInputs?.stanford_view ?? {status:'unknown',detail:'影像推理条件未提供。'}})
   }).catch(e=>{if(current)setInputError(errorMessage(e))})
   return ()=>{current=false}
- },[id])
+ },[id,path])
  const eligibility=input?.id===id?input.status:null
  async function predict(){
   setBusy(true);setError('')
   try{
-   const job=await api<AnalysisJob>('/media/'+id+'/analysis-jobs',{})
+   const job=await api<AnalysisJob>(path+'/analysis-jobs',{})
    setHistory(rows=>[job,...rows.filter(row=>row.id!==job.id)])
   }
   catch(e){setError(errorMessage(e))}

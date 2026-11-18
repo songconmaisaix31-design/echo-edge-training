@@ -41,13 +41,24 @@ def configuration():
 
 
 def predict(folder):
-    reason, config = configuration()
-    if config is None:
-        raise HTTPException(503, reason)
+    config = checked_configuration()
     video = next((folder / ("source" + suffix) for suffix in VIDEO_SUFFIXES
                   if (folder / ("source" + suffix)).is_file()), None)
     if video is None:
         raise HTTPException(422, "需要重新导入原始 AVI、MP4 或 MOV 视频")
+    return predict_video(video, config)
+
+
+def checked_configuration():
+    reason, config = configuration()
+    if config is None:
+        raise HTTPException(503, reason)
+    return config
+
+
+def predict_video(video, config=None):
+    if config is None:
+        config = checked_configuration()
     if not SLOTS.acquire(blocking=False):
         raise HTTPException(503, "另一段影像正在推理，请稍后再试")
     python, script, report, checkpoint = config

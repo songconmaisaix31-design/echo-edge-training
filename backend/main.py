@@ -198,5 +198,8 @@ exam_parameters.register(app)
 import analysis_jobs
 analysis_jobs.register(app, media_folder)
 
+import public_samples
+public_samples.register(app)
+
 import research_reports
 research_reports.register(app)

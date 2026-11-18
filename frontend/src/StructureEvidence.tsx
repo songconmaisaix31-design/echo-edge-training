@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react'
-import {api,apiUrl,errorMessage} from './api'
+import {api,apiUrl,errorMessage,mediaApiPath,type MediaScope} from './api'
 import type {AnalysisJobState} from './analysis-state'
 import {Button} from './button'
 
@@ -11,7 +11,8 @@ type Job = {
  error:string|null
  output:{epoch:number;foreground_pixels:number;frame:{frame_index:number;timestamp_ms:number}}|null
 }
-export default function StructureEvidence({id, configured}:{id:string;configured:boolean|null}){
+export default function StructureEvidence({id, configured, scope='private'}:{id:string;configured:boolean|null;scope?:MediaScope}){
+ const path=mediaApiPath(id,scope)
  const [frames,setFrames]=useState<Frame[]>([])
  const [index,setIndex]=useState(0)
  const [job,setJob]=useState<Job|null>(null)
@@ -20,19 +21,19 @@ export default function StructureEvidence({id, configured}:{id:string;configured
 
  useEffect(()=>{
   let current=true
-  Promise.all([api<{frames:Frame[]}>('/media/'+id),api<Job[]>('/media/'+id+'/analysis-jobs')])
+  Promise.all([api<{frames:Frame[]}>(path),api<Job[]>(path+'/analysis-jobs')])
    .then(([media,jobs])=>{
     if(!current)return
     setFrames(media.frames)
     setJob(jobs.find(item=>item.model_type==='cardiacudc_fourchamber')??null)
    }).catch((failure:Error)=>{if(current)setError(errorMessage(failure))})
   return ()=>{current=false}
- },[id])
+ },[path])
 
  async function segment(){
   setBusy('正在分割…');setError('')
   try{
-   setJob(await api<Job>('/media/'+id+'/structure-jobs',{frame_index:index}))
+   setJob(await api<Job>(path+'/structure-jobs',{frame_index:index}))
   }catch(failure){setError(errorMessage(failure))}
   finally{setBusy('')}
  }
@@ -50,7 +51,7 @@ export default function StructureEvidence({id, configured}:{id:string;configured
   {job?.state==='succeeded'&&job.output&&<div className="record">
    <h3>四腔结构叠图</h3>
    <p>第 {job.output.frame.frame_index+1} 帧 · {job.output.frame.timestamp_ms} ms · 模型第 {job.output.epoch} 轮</p>
-   <div className="cine-image"><img src={apiUrl('/analysis-jobs/'+job.id+'/overlay')} alt="LV 蓝色、LA 绿色、RA 橙色、RV 紫色的四腔结构叠图"/></div>
+   <div className="cine-image"><img src={apiUrl(scope==='samples'?path+'/overlays/'+job.output.frame.frame_index:'/analysis-jobs/'+job.id+'/overlay')} alt="LV 蓝色、LA 绿色、RA 橙色、RV 紫色的四腔结构叠图"/></div>
    <p>LV 蓝色 · LA 绿色 · RA 橙色 · RV 紫色</p>
   </div>}
  </article>

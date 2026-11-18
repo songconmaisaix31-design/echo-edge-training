@@ -55,6 +55,21 @@ def export_video(source, output, count):
         public.mux(target.encode())
 
 
+def export_frames(video, directory, number, count):
+    directory.mkdir(parents=True)
+    with av.open(str(video)) as media:
+        stream = media.streams.video[0]
+        frames = []
+        for index, frame in enumerate(media.decode(stream)):
+            require(frame.time is not None, "公开视频缺少帧时间")
+            frame.to_image().save(directory / f"{index}.jpg", quality=82)
+            frames.append({"index": index, "offsetMs": frame.time * 1000})
+        require(len(frames) == count, "公开视频帧索引不完整")
+        metadata = {"id": str(number), "width": stream.width, "height": stream.height,
+                    "codec": stream.codec_context.name, "frameCount": count, "frames": frames}
+    (directory / "metadata.json").write_text(json.dumps(metadata, allow_nan=False), encoding="utf-8")
+
+
 def catalog_record(source, output):
     records = json.loads(source.read("records.json"))
     counts = {"patients": 4, "examinations": 4, "media": 5}
@@ -73,7 +88,9 @@ def catalog_record(source, output):
         approved = json.loads(source.read(f"{folder}/metadata.json"))
         count = approved["frameCount"]
         require(type(count) is int and count > 0, "无效帧数")
-        export_video(source.read(f"{folder}/source.mp4"), output / f"video-{number}.mp4", count)
+        public_video = output / f"video-{number}.mp4"
+        export_video(source.read(f"{folder}/source.mp4"), public_video, count)
+        export_frames(public_video, output / "frames" / str(number), number, count)
         videos.setdefault(row["case_id"], []).append({"id": number, "frames": count})
 
     latest = {row["exam_id"]: json.loads(row["data"])

@@ -85,6 +85,29 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def checked_structure_configuration():
+    config = structure_configuration()
+    if config is None:
+        raise HTTPException(503, "四腔分割模型未配置")
+    if sha256(config[1]) != CARDIACUDC_SHA256:
+        raise HTTPException(503, "四腔分割权重与 CardiacUDC 发布版不一致")
+    return config
+
+
+def segment_video(video, index, image, config):
+    python, checkpoint = config
+    runner = Path(__file__).with_name("cardiacudc_frame.py")
+    command = [str(python), "-X", "utf8", str(runner), "--checkpoint", str(checkpoint),
+               "--video", str(video.resolve()), "--frame", str(index), "--output", str(image)]
+    try:
+        process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=True, timeout=60)
+        return json.loads(process.stdout)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "四腔分割超时") from None
+    except (subprocess.CalledProcessError, OSError, ValueError):
+        raise HTTPException(502, "四腔分割执行失败") from None
+
+
 def run(identifier, folder, user, legacy=False):
     with db.Session() as session:
         media = session.get(db.Media, identifier)
@@ -190,12 +213,7 @@ def run_structure(identifier, folder, index, user):
         case = db.get_case(session, media.case_id, user)
         if session.get(Examination, case.id) is None:
             raise HTTPException(409, "影像尚未关联正式检查")
-    config = structure_configuration()
-    if config is None:
-        raise HTTPException(503, "四腔分割模型未配置")
-    python, checkpoint = config
-    if sha256(checkpoint) != CARDIACUDC_SHA256:
-        raise HTTPException(503, "四腔分割权重与 CardiacUDC 发布版不一致")
+    config = checked_structure_configuration()
     video = next((path for path in folder.glob("source.*") if path.is_file()), None)
     metadata = folder / "metadata.json"
     if video is None or not metadata.is_file():
@@ -206,17 +224,9 @@ def run_structure(identifier, folder, index, user):
     model_input = ModelInput(case.id, identifier, video, sha256(video))
 
     def segment(job_id):
-        runner = Path(__file__).with_name("cardiacudc_frame.py")
         with TemporaryDirectory(prefix=".structure-", dir=folder) as scratch:
             image = Path(scratch) / "overlay.png"
-            command = [str(python), "-X", "utf8", str(runner), "--checkpoint", str(checkpoint),
-                       "--video", str(video.resolve()), "--frame", str(index), "--output", str(image)]
-            try:
-                process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
-                                         check=True, timeout=60)
-            except subprocess.TimeoutExpired as error:
-                raise HTTPException(504, "四腔分割超时") from error
-            output = json.loads(process.stdout)
+            output = segment_video(video, index, image, config)
             image.replace(folder / f"structure-{job_id}.png")
         return {**output, "frame": {"media_id": identifier, "frame_index": index,
                                      "timestamp_ms": frames[index]["offsetMs"]}}

@@ -1,17 +1,3 @@
-.public-samples {
-  max-width: 960px;
-  margin-inline: auto;
-}
-
-.public-sample-heading {
-  margin-block-end: 26px;
-}
-
-.public-sample-heading h1 {
-  margin-block: 22px 6px;
-  font-size: clamp(28px, 4vw, 38px);
-}
-
 .public-sample-list summary {
   cursor: pointer;
   font-size: 17px;
