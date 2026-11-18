@@ -1,13 +1,13 @@
 import {useEffect,useState} from 'react'
 import {Button} from './button'
-import {api} from './Modules'
+import {api,apiUrl,errorMessage} from './api'
 
 type Review={id:number;version:number;author:string;created:string;text:string}
 type Job={id:number;state:string;model_type:string;model_version:string}
 type Report={id:number;version:number;review:Review;author:string;created:string;text:string;analysis:Job[]}
 
 export default function ReviewWorkflow({exam,status,role,page,consultation,onChange}:{
- exam:string;status:string;role:string;page:string;consultation?:string;onChange:()=>Promise<void>
+ exam:string;status:string;role:string;page:string;consultation:string|undefined;onChange:()=>Promise<void>
 }){
  const [reviews,setReviews]=useState<Review[]>([])
  const [reports,setReports]=useState<Report[]>([])
@@ -23,13 +23,13 @@ export default function ReviewWorkflow({exam,status,role,page,consultation,onCha
    page==='reports'?api<Report[]>(base+'/report-versions'):Promise.resolve([]),
    page==='reports'?api<Job[]>(base+'/analysis-jobs'):Promise.resolve([])
   ]).then(([r,v,j])=>{if(active){setReviews(r);setReports(v);setJobs(j)}})
-  .catch(e=>{if(active)setError(e.message)})
+  .catch(e=>{if(active)setError(errorMessage(e))})
   return ()=>{active=false}
  },[base,page,revision])
  async function save(action:()=>Promise<unknown>){
   setBusy(true);setError('')
   try{await action();refresh(v=>v+1);await onChange()}
-  catch(e){setError((e as Error).message)}
+  catch(e){setError(errorMessage(e))}
   finally{setBusy(false)}
  }
  return <section className="queue padded">
@@ -61,7 +61,7 @@ export default function ReviewWorkflow({exam,status,role,page,consultation,onCha
     <b>签发版本 #{r.version} · 审核 #{r.review.version} · {r.author}</b>
     <p className="preserve">{r.text}</p>
     <p>引用切面任务：{r.analysis.map(j=>'#'+j.id).join('、')||'无'}</p>
-    <Button variant="outline" asChild><a href={'/api/v1'+base+'/report-versions/'+r.id+'/export'}>导出签发版本</a></Button>
+    <Button variant="outline" asChild><a href={apiUrl(base+'/report-versions/'+r.id+'/export')}>导出签发版本</a></Button>
    </article>)}
   </>}
  </section>

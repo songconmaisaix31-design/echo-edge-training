@@ -1,22 +1,20 @@
 import {useEffect, useState} from 'react'
-import {api} from './api'
+import {api,apiUrl,errorMessage} from './api'
+import type {AnalysisJobState} from './analysis-state'
 import {Button} from './button'
 
 type Frame = {index:number; offsetMs:number}
 type Job = {
  id:number
  model_type:string
- state:string
+ state:AnalysisJobState
  error:string|null
  output:{epoch:number;foreground_pixels:number;frame:{frame_index:number;timestamp_ms:number}}|null
 }
-type Receipt = {hint:string;sequence:number}
-
-export default function StructureEvidence({id, configured, terminal}:{id:string;configured:boolean|null;terminal:boolean}){
+export default function StructureEvidence({id, configured}:{id:string;configured:boolean|null}){
  const [frames,setFrames]=useState<Frame[]>([])
  const [index,setIndex]=useState(0)
  const [job,setJob]=useState<Job|null>(null)
- const [receipt,setReceipt]=useState<Receipt|null>(null)
  const [busy,setBusy]=useState('')
  const [error,setError]=useState('')
 
@@ -27,23 +25,15 @@ export default function StructureEvidence({id, configured, terminal}:{id:string;
     if(!current)return
     setFrames(media.frames)
     setJob(jobs.find(item=>item.model_type==='cardiacudc_fourchamber')??null)
-   }).catch((failure:Error)=>{if(current)setError(failure.message)})
+   }).catch((failure:Error)=>{if(current)setError(errorMessage(failure))})
   return ()=>{current=false}
  },[id])
 
  async function segment(){
-  setBusy('正在分割…');setError('');setReceipt(null)
+  setBusy('正在分割…');setError('')
   try{
    setJob(await api<Job>('/media/'+id+'/structure-jobs',{frame_index:index}))
-  }catch(failure){setError((failure as Error).message)}
-  finally{setBusy('')}
- }
-
- async function send(jobId:number){
-  setBusy('等待终端回执…');setError('');setReceipt(null)
-  try{
-   setReceipt(await api<Receipt>('/analysis-jobs/'+jobId+'/terminal',{}))
-  }catch(failure){setError((failure as Error).message)}
+  }catch(failure){setError(errorMessage(failure))}
   finally{setBusy('')}
  }
 
@@ -60,10 +50,8 @@ export default function StructureEvidence({id, configured, terminal}:{id:string;
   {job?.state==='succeeded'&&job.output&&<div className="record">
    <h3>四腔结构叠图</h3>
    <p>第 {job.output.frame.frame_index+1} 帧 · {job.output.frame.timestamp_ms} ms · 模型第 {job.output.epoch} 轮</p>
-   <div className="cine-image"><img src={'/api/v1/analysis-jobs/'+job.id+'/overlay'} alt="LV 蓝色、LA 绿色、RA 橙色、RV 紫色的四腔结构叠图"/></div>
+   <div className="cine-image"><img src={apiUrl('/analysis-jobs/'+job.id+'/overlay')} alt="LV 蓝色、LA 绿色、RA 橙色、RV 紫色的四腔结构叠图"/></div>
    <p>LV 蓝色 · LA 绿色 · RA 橙色 · RV 紫色</p>
-   {terminal&&<Button variant="outline" disabled={!!busy} onClick={()=>void send(job.id)}>发送分割完成到终端</Button>}
-   {receipt&&<p role="status">终端已接收 {receipt.hint} · 回执 #{receipt.sequence}</p>}
   </div>}
  </article>
 }

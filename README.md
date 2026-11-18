@@ -2,18 +2,14 @@
 
 # Echo Edge · 儿童心超研究工作站
 
-Four ends in one room: a Windows web workstation, a FastAPI backend, research echo models on a local GPU, and an ESP32-S3 bed-side panel that takes hints over USB serial.
+A Windows web workstation and FastAPI backend for reviewing pediatric echocardiography videos and results from local research models.
 
-四端在同一间屋子里：Windows 上的网页工作站、FastAPI 后端、本机 GPU 上的心超研究模型，以及一块通过 USB 串口接收提示的 ESP32-S3 床旁终端。
+网页工作站和 FastAPI 后端用于查看儿童心超视频与本地研究模型的结果。
 
 [![python](https://img.shields.io/badge/python-3.13.13-blue.svg)](requirements.txt)
 [![platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4.svg)](docs/WORKSTATION_TERMINAL.md)
 [![cuda](https://img.shields.io/badge/torch-2.12.1%2Bcu130-76B900.svg)](requirements.txt)
 [![weights](https://img.shields.io/badge/weights-GitHub%20Releases%20(private)-orange.svg)](docs/WORKSTATION_TERMINAL.md)
-
-<img src="firmware/echo-panel/screen.png" width="512" alt="128x64 OLED bed-side panel showing the latest echo view result" />
-
-<sub>The 128×64 bed-side panel render from `firmware/echo-panel`: it shows the latest view result and speaks it through SYN6288E.<br/>`firmware/echo-panel` 里的 128×64 床旁面板渲染图：显示最近一次切面结论，并通过 SYN6288E 念出来。</sub>
 
 </div>
 
@@ -28,23 +24,23 @@ Four ends in one room: a Windows web workstation, a FastAPI backend, research ec
 | | |
 |---|---|
 | **Problem<br/>问题** | A pediatric echo model that only lives in a notebook cannot be reviewed at the bed side, and a demo that only runs on synthetic clips says nothing about whether the pipeline handles real DICOM cine, colour Doppler or variable frame intervals.<br/>只活在 notebook 里的儿童心超模型，在床旁没法复核；只在合成片段上跑通的演示，也说明不了管线能不能处理真实 DICOM cine、彩色多普勒和变帧间隔。 |
-| **Fix<br/>做法** | Four ends wired to one database and one serial link: web (create exam, import video, read frames), API (permissions, media originals, SQLite records, serial), models (view classification, four-chamber segmentation, quality, ejection fraction), terminal (OLED panel plus voice, `HINT` in and `ACK` back).<br/>四端接到同一个数据库和一条串口上：网页（建检查、导入视频、阅帧）、API（权限、媒体原件、SQLite 记录、串口）、模型（切面识别、四腔分割、质量、射血分数）、终端（OLED 面板加语音，收 `HINT` 回 `ACK`）。 |
-| **Cost<br/>代价** | Windows x64 with PowerShell, Python 3.13, a CUDA GPU (verified here on an RTX 5060 Laptop with 8 GB), roughly 1.9 GB of CUDA PyTorch downloads, and an ESP32-S3 board for the terminal end. Weights live in this repository's Releases and need repository access.<br/>Windows x64 加 PowerShell、Python 3.13、一块 CUDA GPU（这里在 RTX 5060 Laptop 8 GB 上验证）、约 1.9 GB 的 CUDA PyTorch 下载，以及终端那端的 ESP32-S3 板子。权重在本仓库的 Release 里，需要仓库权限。 |
+| **Workflow<br/>流程** | The browser creates exams, imports videos and reads frames. The API controls access and stores media and analysis records. Configured local models process eligible inputs.<br/>网页负责建检查、导入视频和阅帧。API 管理访问权限，保存影像和分析记录。已配置的本地模型处理符合条件的输入。 |
+| **Model environment<br/>模型环境** | The GPU inference environment uses Windows x64, PowerShell, Python 3.13 and a CUDA GPU. Weights are available in repository Releases with repository access.<br/>GPU 推理环境使用 Windows x64、PowerShell、Python 3.13 和 CUDA GPU。具备仓库权限即可访问 Release 中的权重。 |
 | **Not<br/>不是** | Not a diagnostic device, not regulatory-cleared software, and not clinically validated: there is no clinical-accuracy evaluation yet, and every model here is labelled as research use.<br/>不是诊断设备、没有器械认证、也没有临床验证：目前没有临床准确率评估，这里每个模型都标为研究用途。 |
 
 ## The problem · 问题在哪
 
-The loop that matters is not "get a prediction". It is: create an exam, attach the original cine, run a model, keep the frame the result came from, let a clinician read it again tomorrow, and push one line of text to a device at the bed side. Each of those steps can pass alone and break in the join.
+The workstation links a patient's exam, the original cine, and the analysis so a clinician can reopen the record and review the underlying evidence.
 
-真正要跑的环路不是"出一个预测"，而是：建检查、挂上原始 cine、跑模型、保留结论来自哪一帧、让医生明天还能重新打开，再把一行文字推到床旁的设备上。每一步单独都能过，连起来就会断。
+工作站将患儿检查、原始动态影像和分析结果关联起来，方便医生重新打开记录并复核证据。
 
 Two constraints shape the repository. Patient video cannot enter Git, so originals, filled annotation workbooks, patient mapping tables, frame caches and run directories are all ignored, and only code, pinned dependency versions, blank templates and documents are tracked. Model weights follow the same rule: they are attached to Releases, not committed.
 
 两个约束决定了这个仓库的形状。病人影像不能进 Git，所以原始影像、填好的标注工作簿、患者关联表、抽帧缓存和训练目录都被忽略，只跟踪代码、固定的依赖版本、空白模板和文档。模型权重同理：挂在 Release 上，不提交进仓库。
 
-The rest of the design follows from the review requirement: an analysis is a job with a state, a failure keeps its reason, and the panel only ever displays the most recent finished result — it never guesses.
+Analysis jobs record their status and any failure reason. The workstation displays saved results and evidence.
 
-其余设计来自复核需求：分析是一个带状态的任务，失败会保留原因，面板只显示最近一条已完成的结果——它不做猜测。
+分析任务会记录状态和失败原因。工作站展示已保存的结果和证据。
 
 ## The idea · 思路
 
@@ -54,12 +50,11 @@ The rest of the design follows from the review requirement: an analysis is a job
 | **Analysis job**<br/>分析任务 | `backend/analysis_jobs.py` | Asynchronous, with explicit states; an interrupted job is recovered as `interrupted`, not silently retried.<br/>异步、状态显式；中断的任务恢复为 `interrupted`，不静默重试。 |
 | **Weights**<br/>权重 | GitHub Releases | Engines, checkpoints and reports are release attachments; the inference entry re-checks GPU, TensorRT version and engine SHA-256.<br/>引擎、检查点与报告是 Release 附件；推理入口会复核 GPU、TensorRT 版本与引擎 SHA-256。 |
 | **Data boundary**<br/>数据边界 | `data/`, `work/`, `runs/` (ignored) | Originals, annotations and caches stay in the authorised environment; nothing patient-related is committed.<br/>原始影像、标注与缓存留在授权环境里；任何与患者相关的文件都不提交。 |
-| **Terminal**<br/>终端 | `firmware/edge-terminal/`, `backend/terminal_link.py` | Receives `HINT`, returns `ACK`. It does no inference and no acquisition — it is a display that talks.<br/>收 `HINT`、回 `ACK`。它不推理、不采集——是一块会说话的显示器。 |
 | **Research label**<br/>研究标签 | Releases, `docs/` | Non-commercial research use only; dataset licences are recorded, and the stricter reading wins where sources disagree.<br/>仅限非商业研究；数据集许可逐项记录，来源冲突时按更严格的口径执行。 |
 
-The practical test of the chain: import a public teaching clip, run the view model, save, refresh the page and read the result back, then send a hint and watch the terminal return its receipt. That exact sequence is the one recorded as exercised.
+The isolated browser verification starts both services and exercises exam creation, media import, review and persistence. See [AGENTS.md](AGENTS.md) for the command and the report location.
 
-这条链路最实际的验证方式：导入一段公开教学片段、跑切面模型、保存、刷新页面读回结果，然后发一条提示，看终端是否回执。被记为"已实测"的就是这一串动作。
+隔离的浏览器验证会启动两项服务，并操作新建检查、导入影像、阅片和刷新读回。命令和报告位置见 [AGENTS.md](AGENTS.md)。
 
 ## Capabilities · 能力清单
 
@@ -81,10 +76,10 @@ These figures are quoted from the reports linked above. This rewrite did not re-
 
 | End · 端 | Path · 路径 | What it does · 做什么 |
 |---|---|---|
-| Web<br/>网页 | `frontend/` | React 19 + Vite: exam creation, video import and playback, four-chamber overlay, terminal receipts. Default `http://127.0.0.1:5181/`.<br/>React 19 + Vite：建检查、导入与播放视频、四腔叠图、终端回执。默认 `http://127.0.0.1:5181/`。 |
-| API<br/>接口 | `backend/` | FastAPI + SQLAlchemy + Alembic: permissions, media originals, SQLite analysis records, serial link. Default `http://127.0.0.1:8019/`.<br/>FastAPI + SQLAlchemy + Alembic：权限、媒体原件、SQLite 分析记录、串口链路。默认 `http://127.0.0.1:8019/`。 |
+| Web<br/>网页 | `frontend/` | React 19 and Vite support exam creation, video import and playback, and four-chamber overlays. Default `http://127.0.0.1:5181/`.<br/>React 19 和 Vite 提供新建检查、导入与播放视频和四腔叠图。默认 `http://127.0.0.1:5181/`。 |
+| API<br/>接口 | `backend/` | FastAPI, SQLAlchemy and Alembic handle permissions, media originals and SQLite analysis records. Default `http://127.0.0.1:8019/`.<br/>FastAPI、SQLAlchemy 和 Alembic 管理权限、媒体原件和 SQLite 分析记录。默认 `http://127.0.0.1:8019/`。 |
 | Models<br/>模型 | root scripts | `train_echo.py`, `train_stanford_lv.py`, `train_stanford_ef.py`, `train_camus.py`, `train_cardiacudc.py`, `infer_stanford.py`, `evaluate_echo.py`, `benchmark_echo.py`.<br/>训练、推理、评估与测速入口各一支脚本。 |
-| Terminal<br/>终端 | `firmware/` | ESP32-S3 EdgeTerminal plus the `echo-panel`, `ecw-*`, `sensor-hub` and `probe` sketches; Python helpers under `firmware/tools/`.<br/>ESP32-S3 的 EdgeTerminal，以及 `echo-panel`、`ecw-*`、`sensor-hub`、`probe` 几个 sketch；`firmware/tools/` 下是 Python 辅助脚本。 |
+| Legacy terminal<br/>历史终端 | `firmware/` | ESP32-S3 sketches and historical device tools.<br/>ESP32-S3 固件与历史设备工具。 |
 
 ## Quickstart · 快速开始
 
@@ -139,9 +134,9 @@ A successful run prints one JSON object with `precision` `fp16`, a `view` of `A4
 
 ### 4. Run the whole workstation · 跑整台工作站
 
-The deployment walkthrough — two Python environments, migrations, the first operator account, the web and API ports, and the four-end acceptance — is in [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md). Before training on team data, run the preflight gate and read its report:
+Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
-完整部署步骤——两个 Python 环境、迁移、首个操作员账号、网页与 API 端口、四端验收——在 [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md)。用团队数据训练之前，先跑预检闸门并读报告：
+准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
 
 ```powershell
 & $python -X utf8 .\train_echo.py train @config --preflight-only
@@ -155,7 +150,7 @@ Exit code `0` means the data passed; `1` means the report found a problem. The r
 
 | Doc · 文档 | Read it when · 什么时候读 |
 |---|---|
-| [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md) | Deploying the four ends on one Windows machine.<br/>在一台 Windows 上部署四端。 |
+| [docs/WORKSTATION_TERMINAL.md](docs/WORKSTATION_TERMINAL.md) | Historical workstation and terminal deployment record.<br/>工作站和终端的历史部署记录。 |
 | [docs/MODEL_EVALUATION.md](docs/MODEL_EVALUATION.md) | Locked evaluation, ONNX checks and the video inference path.<br/>锁定模型后的评估、ONNX 核对与视频推理路径。 |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Per-patient evaluation and the read-only Stanford fold review.<br/>按患儿评估与 Stanford 分折只读核查。 |
 | [docs/CAMUS.md](docs/CAMUS.md), [docs/CARDIACUDC.md](docs/CARDIACUDC.md) | The two public datasets and their segmentations.<br/>两个公开数据集与对应分割能力。 |
@@ -195,9 +190,9 @@ echo-edge-training/
 
 ## Status · 状态
 
-Recorded as exercised: importing public teaching videos, running inference, saving results, reading them back after a refresh, and the terminal receiving a command. `docs/V1_E2E_ACCEPTANCE.md` records 6 backend pytest cases passing plus a TypeScript and Vite build, with one module left as BLOCKED — the exam-switch control was never asserted in the browser.
+The historical acceptance results are in `docs/V1_E2E_ACCEPTANCE.md`. The current isolated verification writes its results to `work/verify/report.json`.
 
-记为已实测的部分：导入公开教学视频、跑推理、保存结果、刷新后读回，以及终端收到命令。`docs/V1_E2E_ACCEPTANCE.md` 记录后端 pytest 6 项通过、TypeScript 与 Vite 构建通过，同时有一个模块仍是 BLOCKED——检查切换控件没有在浏览器里完成断言。
+历史验收结果保存在 `docs/V1_E2E_ACCEPTANCE.md`。当前隔离验证把实际结果写入 `work/verify/report.json`。
 
 Known limits, stated rather than hidden:
 
@@ -205,13 +200,11 @@ Known limits, stated rather than hidden:
 
 - **No clinical accuracy claim.** Nothing here has been evaluated against clinical ground truth; the models are research artefacts.
 - **Team data is not validated.** Two-dimensional colour Doppler, variable frame intervals, formal annotations and the resulting fine-tune still have to be exercised on real hospital data.
-- **Formal feedback acceptance is open.** The terminal feedback loop still needs a frozen dual-head model, three classes of real video and continuous linkage records.
 - **No CI.** The repository has no `.github/workflows`, so there is no CI badge on this page; `pytest` is run by hand. Test counts above are the numbers recorded in the acceptance document, not a run repeated for this rewrite.
 - **No licence file.** There is no `LICENSE` at the repository root; see below.
 
 - **不做临床准确率声明。** 这里的东西没有和临床真值对照评估过；模型是研究产物。
 - **团队数据没有验证。** 二维彩色多普勒、变帧间隔、正式标注以及由此得到的微调，仍需在真实院方数据上跑过。
-- **正式反馈验收还没关。** 终端反馈闭环仍需要冻结的双头模型、三类真实视频和连续联动记录。
 - **没有 CI。** 仓库里没有 `.github/workflows`，所以这页不放 CI 徽章；`pytest` 是手工跑的。上面的测试数字是验收文档里记录的数字，不是这次改写重跑的。
 - **没有许可文件。** 仓库根目录没有 `LICENSE`，见下。
 

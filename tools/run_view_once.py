@@ -1,12 +1,3 @@
-"""离线跑一次 stanford_view 推理, 用来验证"模型输出 -> 面板"这条链路。
-
-为什么不走 HTTP: /api/v1/media/{id}/predict 需要 echo_session 登录态,
-而这里只是要一个真实的新结果落库, 不想为此临时建账号、动用户表。所以直接
-调 analysis_jobs.run(), 用的是库里已有的 operator 用户, 模型、视频、版本
-指纹都走和线上同一条路径, 落库的也是一条正常的 AnalysisJob。
-
-用法: <api-venv>/Scripts/python.exe run_view_once.py <media_id>
-"""
 import os
 import sys
 import time
@@ -26,7 +17,6 @@ os.environ.update({
         E2E, "models", "cardiacudc-fourchamber-v1", "CardiacUDC-FourChamber-UNet-epoch18.pt"),
     "ECHO_DATABASE_URL": "sqlite:///" + os.path.join(E2E, "integration.db").replace("\\", "/"),
     "ECHO_MEDIA_ROOT": os.path.join(E2E, "media"),
-    "ECHO_TERMINAL_PORT": "COM4",
 })
 
 sys.path.insert(0, BACKEND)
