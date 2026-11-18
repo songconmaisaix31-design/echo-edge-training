@@ -1,18 +1,10 @@
 import assert from 'node:assert/strict'
-import {spawn} from 'node:child_process'
 import {randomBytes} from 'node:crypto'
-import {once} from 'node:events'
 import {mkdir, mkdtemp, writeFile} from 'node:fs/promises'
-import {createRequire} from 'node:module'
 import {join} from 'node:path'
-import {fileURLToPath, pathToFileURL} from 'node:url'
+import {createWeb, isolatedEnvironment, prepareDatabase, requireFrontend, root, startApi, stopApi} from './workstation-services.mjs'
 
-const root = fileURLToPath(new URL('../', import.meta.url))
-const frontend = join(root, 'frontend')
-const backend = join(root, 'backend')
-const require = createRequire(join(frontend, 'package.json'))
-const {chromium} = require('playwright')
-const {createServer} = await import(pathToFileURL(require.resolve('vite')).href)
+const {chromium} = requireFrontend('playwright')
 const fixture = join(root, 'fixtures', 'flower.mp4')
 const base = join(root, 'work', 'verify')
 await mkdir(base, {recursive: true})
@@ -20,17 +12,7 @@ const run = await mkdtemp(join(base, 'run-'))
 const python = process.env.ECHO_VERIFY_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
 const user = 'verify-operator'
 const password = randomBytes(18).toString('base64url')
-const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^ECHO_|^PYTHONPATH$/i.test(name)))
-Object.assign(env, {
-  ECHO_DATABASE_URL: `sqlite:///${join(run, 'verify.db').replaceAll('\\', '/')}`,
-  ECHO_MEDIA_ROOT: join(run, 'media'),
-  ECHO_VERIFY_USER: user,
-  ECHO_VERIFY_PASSWORD: password,
-  PYTHONUTF8: '1',
-  TMP: run,
-  TEMP: run,
-  TMPDIR: run,
-})
+const env = isolatedEnvironment(run, 'verify.db')
 
 const report = {
   status: 'failed',
@@ -46,34 +28,9 @@ const report = {
 }
 let api
 let web
+let localWeb
 let browser
 let apiLog = ''
-
-async function runPython(args) {
-  const child = spawn(python, args, {cwd: backend, env, stdio: 'inherit', windowsHide: true})
-  const [code] = await once(child, 'exit')
-  assert.equal(code, 0, `Python 执行失败：${args.join(' ')}`)
-}
-
-function startApi() {
-  api = spawn(python, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '0', '--no-use-colors'], {
-    cwd: backend, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-  })
-  api.stdout.on('data', data => { apiLog += data })
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('后端 30 秒内未启动')), 30_000)
-    api.once('error', error => { clearTimeout(timeout); reject(error) })
-    api.once('exit', code => { clearTimeout(timeout); reject(new Error(`后端退出：${code}`)) })
-    api.stderr.on('data', data => {
-      apiLog += data
-      const match = apiLog.match(/Uvicorn running on (http:\/\/127\.0\.0\.1:\d+)/)
-      if (match) {
-        clearTimeout(timeout)
-        resolve(match[1])
-      }
-    })
-  })
-}
 
 function observePage(page, origin) {
   page.on('pageerror', error => report.browserErrors.push(error.message))
@@ -110,10 +67,11 @@ async function checkWorkstation(origin) {
   const link = name => page.getByRole('link', {name, exact: true})
   const heading = name => page.getByRole('heading', {name, exact: true})
   const label = name => page.getByLabel(name, {exact: true})
-  await page.addInitScript({path: require.resolve('axe-core/axe.min.js')})
+  await page.addInitScript({path: requireFrontend.resolve('axe-core/axe.min.js')})
 
   observePage(page, origin)
   assert.equal((await page.request.get('/api/v1/cases')).status(), 401)
+  assert.equal((await page.request.post('/api/v1/local-session', {headers: {Origin: origin}})).status(), 404)
   const capabilities = await page.request.get('/api/v1/capabilities')
   assert.equal(capabilities.status(), 200)
   const features = await capabilities.json()
@@ -227,34 +185,70 @@ async function checkWorkstation(origin) {
   report.passed.push('旧终端接口和能力字段已移除')
 }
 
-try {
-  await runPython(['-m', 'alembic', 'upgrade', 'head'])
-  await runPython([join(root, 'scripts', 'verify-bootstrap.py')])
-  const target = await startApi()
-  web = await createServer({root: frontend, server: {
-    host: '127.0.0.1', port: 0, strictPort: true, proxy: {'/api': target},
-  }})
-  await web.listen()
-  const address = web.httpServer.address()
+async function webOrigin(server) {
+  await server.listen()
+  const address = server.httpServer.address()
   assert.ok(address && typeof address === 'object')
-  await checkWorkstation(`http://127.0.0.1:${address.port}`)
+  return `http://127.0.0.1:${address.port}`
+}
+
+async function checkLocalEntry(origin) {
+  const page = await browser.newPage({baseURL: origin})
+  observePage(page, origin)
+  assert.equal((await page.request.get('/api/v1/cases')).status(), 401)
+  assert.equal((await page.request.post('/api/v1/local-session')).status(), 403)
+  assert.equal((await page.request.post('/api/v1/local-session', {headers: {Origin: 'http://example.invalid'}})).status(), 403)
+
+  const newPatient = page.getByRole('link', {name: '新建患儿', exact: true})
+  const patientList = page.getByRole('heading', {name: /^患儿档案 · \d+$/})
+  await page.goto('/#patients')
+  await newPatient.waitFor()
+  await patientList.waitFor()
+  assert.equal(await page.getByLabel('账号', {exact: true}).count(), 0)
+  assert.equal(await page.getByRole('button', {name: /^(登录|退出登录)$/}).count(), 0)
+  const identity = await page.request.get('/api/v1/me')
+  assert.equal(identity.status(), 200)
+  assert.deepEqual(await identity.json(), {name: user, role: 'operator'})
+  assert.equal((await page.request.get('/api/v1/cases')).status(), 200)
+  const cookie = (await page.context().cookies(origin)).find(value => value.name === 'echo_session')
+  assert.ok(cookie?.httpOnly && cookie.sameSite === 'Strict')
+
+  await page.reload()
+  await patientList.waitFor()
+  const reused = (await page.context().cookies(origin)).find(value => value.name === 'echo_session')
+  assert.ok(reused?.value === cookie.value, '刷新后应复用本机会话。')
+  assert.deepEqual(report.browserErrors, [])
+  report.passed.push('本机浏览器直接进入患儿管理，刷新复用操作员会话，跨来源和无来源请求均被拒绝')
+}
+
+try {
+  const operator = {name: user, password}
+  await prepareDatabase(python, env, operator)
+  const service = startApi(python, env, data => { apiLog += data })
+  api = service.child
+  const target = await service.ready
+  web = await createWeb({target, port: 0, cacheDir: join(run, 'shared-vite')})
+  await checkWorkstation(await webOrigin(web))
+  localWeb = await createWeb({target, port: 0, cacheDir: join(run, 'local-vite'), operator})
+  await checkLocalEntry(await webOrigin(localWeb))
   report.status = 'passed'
 } catch (error) {
   report.error = error instanceof Error ? error.message : String(error)
   console.error(error)
   process.exitCode = 1
 } finally {
-  const closeResults = await Promise.allSettled([browser?.close(), web?.close()])
+  const closeResults = await Promise.allSettled([browser?.close()])
+  closeResults.push(...await Promise.allSettled([web?.close(), localWeb?.close()]))
+  closeResults.push(...await Promise.allSettled([stopApi(api)]))
   const cleanupErrors = closeResults.filter(result => result.status === 'rejected')
   if (cleanupErrors.length) {
     report.status = 'failed'
     report.cleanupErrors = cleanupErrors.map(result => String(result.reason))
     process.exitCode = 1
   }
-  if (api?.pid && api.exitCode === null && api.signalCode === null) {
-    const exited = once(api, 'exit')
-    api.kill()
-    await exited
+  if (report.browserErrors.length > 0) {
+    report.status = 'failed'
+    process.exitCode = 1
   }
   await writeFile(join(run, 'api.log'), apiLog)
   const summary = JSON.stringify(report, null, 2) + '\n'

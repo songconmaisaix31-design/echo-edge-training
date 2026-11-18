@@ -134,6 +134,10 @@ A successful run prints one JSON object with `precision` `fp16`, a `view` of `A4
 
 ### 4. Run the whole workstation · 跑整台工作站
 
+For a local workstation that opens directly in the browser, prepare the frontend and backend dependencies and run `npm --prefix frontend run dev:local`. Open `http://127.0.0.1:5176/`. Records and media for this mode are stored in `work/local-workstation/`. Set `ECHO_LOCAL_PYTHON` if the backend dependencies are in a separate Python environment.
+
+安装前后端依赖后，运行 `npm --prefix frontend run dev:local`，在 `http://127.0.0.1:5176/` 直接进入本机工作站。该模式的记录与影像保存在 `work/local-workstation/`。如果后端依赖装在独立的 Python 环境中，可以用 `ECHO_LOCAL_PYTHON` 指定解释器。
+
 Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
 准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
