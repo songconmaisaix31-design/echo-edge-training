@@ -35,6 +35,9 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
  const [revision,reload]=useState(0)
  const [allowed,setAllowed]=useState(false)
  const sampleOnly=capabilities?.reviewSampleOnly===true
+ const modelStatus=statusFailed?'模型状态读取失败，请刷新页面重试。'
+  :sampleOnly&&!loading&&!allowed?'阶跃星辰复核仅支持本次公开样例。'
+  :capabilities?.reviewConfigured?null:capabilities?.reviewDetail||'正在读取视觉模型配置…'
  const job=jobs.find(item=>item.id===selected)??jobs[0]
  const result=job?.state==='succeeded'?job.output:null
 
@@ -61,7 +64,7 @@ export default function MedicalReview({id,kind,capabilities,statusFailed=false}:
  return <article className="medical-review" aria-label={labels[kind]+'大模型复核'}>
   <h2>{labels[kind]}复核</h2>
   <p>按心脏超声专业阅片结构生成 AI 研究意见，结论需医生确认。</p>
-  <p>{statusFailed?'模型状态读取失败，请刷新页面重试。':sampleOnly&&!loading&&!allowed?'阶跃星辰复核仅支持本次公开样例。':capabilities?.reviewConfigured?`将最多 ${capabilities.reviewMaxFrames??12} 个时间采样帧发送至 ${capabilities.reviewModel} 分析。`:capabilities?.reviewDetail||'正在读取视觉模型配置…'}</p>
+  {modelStatus&&<p>{modelStatus}</p>}
   <div className="tabs">
    <Button disabled={!capabilities?.reviewConfigured||(sampleOnly&&!allowed)||loading||busy} onClick={()=>void analyze()}>{busy?'正在分析…':'运行'+labels[kind]+'分析'}</Button>
    <Button variant="outline" disabled={busy||loading} onClick={()=>reload(value=>value+1)}>刷新分析记录</Button>

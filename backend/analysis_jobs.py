@@ -208,10 +208,7 @@ def run_review(identifier, folder, kind, user):
     if sample_hashes is not None:
         if fingerprint != sample_hashes[identifier]:
             raise HTTPException(403, "影像与已获准复核的公开样例不一致。")
-        if kind == "findings":
-            version_input += f":frames={config.max_frames}:low:{medical_review.STEPFUN_FINDINGS_TOKENS}:json-schema"
-        else:
-            version_input += f":frames={config.max_frames}:low:{medical_review.STEPFUN_QUALITY_TOKENS}"
+        version_input += f":frames={config.max_frames}:low:{medical_review.STEPFUN_MAX_TOKENS}:json-schema"
     version = "review:" + hashlib.sha256(version_input.encode()).hexdigest()
     if sample_hashes is not None:
         with db.Session() as session:

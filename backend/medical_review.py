@@ -17,9 +17,9 @@ ReviewKind = Literal["quality", "findings"]
 MAX_FRAMES = 12
 PROMPT_VERSION = "echo-review-v1"
 STEPFUN_ENDPOINT = "https://api.stepfun.com/v1/chat/completions"
-STEPFUN_MODEL = "step-3.7-flash"
-STEPFUN_QUALITY_TOKENS = 4096
-STEPFUN_FINDINGS_TOKENS = 8192
+STEPFUN_MODEL = "step-5-preview"
+STEPFUN_MAX_TOKENS = 12288
+QUALITY_ASSESSMENTS = ("adequate", "limited", "uninterpretable")
 FINDINGS_ASSESSMENTS = ("suspected_findings", "no_specific_finding", "indeterminate")
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 
@@ -66,7 +66,7 @@ class ReviewResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_assessment(self):
-        allowed = ("adequate", "limited", "uninterpretable") if self.kind == "quality" else FINDINGS_ASSESSMENTS
+        allowed = QUALITY_ASSESSMENTS if self.kind == "quality" else FINDINGS_ASSESSMENTS
         if self.assessment not in allowed:
             raise ValueError("结论与任务类型不一致")
         if self.assessment == "suspected_findings" and not self.observations:
@@ -159,15 +159,16 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
     task = "影像质量" if kind == "quality" else "异常征象"
     schema = ReviewResult.model_json_schema()
     response_format = {"type": "json_object"}
-    strict_findings = config.sample_hashes is not None and kind == "findings"
-    if strict_findings:
-        schema["properties"]["kind"] = {"type": "string", "enum": ["findings"]}
-        schema["properties"]["assessment"]["enum"] = list(FINDINGS_ASSESSMENTS)
+    stepfun = config.sample_hashes is not None
+    if stepfun:
+        assessments = QUALITY_ASSESSMENTS if kind == "quality" else FINDINGS_ASSESSMENTS
+        schema["properties"]["kind"] = {"type": "string", "enum": [kind]}
+        schema["properties"]["assessment"]["enum"] = list(assessments)
         schema["properties"]["requires_clinician_review"] = {"type": "boolean", "enum": [True]}
         schema["$defs"]["Observation"]["properties"]["evidence_frame_indices"]["items"]["enum"] = sorted(frame_map)
         response_format = {
             "type": "json_schema",
-            "json_schema": {"name": "echo_findings_review", "strict": True, "schema": schema},
+            "json_schema": {"name": "echo_image_review", "strict": True, "schema": schema},
         }
     prompt = {
         "task": task, "kind": kind,
@@ -176,6 +177,8 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
         "sampled_frames": [{"frame_index": frame.index, "timestamp_ms": frame.offsetMs} for frame in frames],
         "output_schema": schema,
     }
+    if stepfun:
+        prompt["output_style"] = "用简洁中文。优先记录最重要的观察，每项只引用最能支持该观察的帧。"
     content = [{"type": "text", "text": json.dumps(prompt, ensure_ascii=False)}]
     for frame in frames:
         image = (folder / f"{frame.index}.jpg").read_bytes()
@@ -185,9 +188,9 @@ def analyze(config, folder: Path, identifier, kind: ReviewKind, metadata, frames
         "model": config.model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}],
         "response_format": response_format, "max_tokens": 8192, "stream": False,
     }
-    if config.sample_hashes is not None:
+    if stepfun:
         payload["reasoning_effort"] = "low"
-        payload["max_tokens"] = STEPFUN_FINDINGS_TOKENS if strict_findings else STEPFUN_QUALITY_TOKENS
+        payload["max_tokens"] = STEPFUN_MAX_TOKENS
     try:
         with httpx.Client(timeout=httpx.Timeout(180, connect=15), follow_redirects=False) as client:
             response = client.post(config.endpoint, headers={"Authorization": "Bearer " + config.key}, json=payload)
