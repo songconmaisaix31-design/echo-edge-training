@@ -71,7 +71,7 @@ def import_media(media: UploadFile = File(...), case_id: int = Form(...), user=D
                 db.add(Media(id=identifier, case_id=case_id))
                 log(db, user, "media.import", identifier)
                 db.flush()
-                response = {**result, **media_input_status(folder)}
+                response = {**result, **media_input_status(folder, identifier)}
                 if destination.exists():
                     raise FileExistsError(identifier)
                 folder.rename(destination)
@@ -139,7 +139,7 @@ def decode_upload(media, suffix, folder, identifier):
     return result
 
 
-def media_input_status(folder):
+def media_input_status(folder, identifier):
     suffix = next((ext for ext in FORMATS if (folder / ("source" + ext)).is_file()), None)
     supported = suffix in model_inference.VIDEO_SUFFIXES
     reason, configuration = model_inference.configuration()
@@ -151,12 +151,16 @@ def media_input_status(folder):
         status, detail = "model_unavailable", reason
     else:
         status, detail = "eligible", "原件符合 Stanford 切面模型的格式要求，实际运行由推理接口验证。"
-    return {
+    inputs = {
         "original": {"exists": suffix is not None, "format": suffix},
         "modelInputs": {"stanford_view": {
             "inputCompatible": supported, "status": status, "detail": detail,
         }},
     }
+    _, review = medical_review.configuration()
+    if review is not None and review.sample_hashes is not None:
+        inputs["reviewAllowed"] = identifier in review.sample_hashes
+    return inputs
 
 
 def media_folder(identifier):
@@ -174,9 +178,7 @@ def metadata(identifier: str, user=Depends(current)):
         data = json.loads(file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         fail(500, "media_metadata_unavailable", "影像元数据无法读取。")
-    _, review = medical_review.configuration()
-    review_allowed = review is not None and (review.sample_hashes is None or identifier in review.sample_hashes)
-    return JSONResponse({**data, **media_input_status(file.parent), "reviewAllowed": review_allowed},
+    return JSONResponse({**data, **media_input_status(file.parent, identifier)},
                         headers={"Cache-Control": "no-store"})
 
 @app.post("/api/v1/media/{identifier}/predict")
