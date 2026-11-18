@@ -146,6 +146,10 @@ Build the public sample workstation with `ECHO_PUBLIC_SAMPLES=1`. After building
 
 设置 `ECHO_PUBLIC_SAMPLES=1` 构建公开样例工作台。构建后用支持 PyAV 和 H.264 编码的 Python 环境执行 `python scripts/build-public-samples.py <获准公开的样例压缩包> frontend/dist`。发布 `dist`，把 `ECHO_PUBLIC_SAMPLE_ROOT` 指向其中的 `samples` 目录，并把 `ECHO_PUBLIC_SAMPLE_SCRATCH` 指向 API 可写的独立目录。操作员使用已授权会话访问 `/workstation`。
 
+For a full public demo, build with `ECHO_DEMO_BUILD=1` and run the API as a separate service with `ECHO_OPEN_DEMO_ROOT` set to a dedicated directory. Initialize `demo.sqlite3` with Alembic, create `local-operator` with `scripts/ensure-operator.py`, and import approved data into `demo.sqlite3` and `demo-media`. Public visitors share edits in the demo.
+
+完整公网演示使用 `ECHO_DEMO_BUILD=1` 构建。API 使用独立服务，`ECHO_OPEN_DEMO_ROOT` 指向专用目录。用 Alembic 初始化 `demo.sqlite3`，用 `scripts/ensure-operator.py` 创建 `local-operator`，随后将获准公开的数据导入 `demo.sqlite3` 和 `demo-media`。访客共享演示中的修改。
+
 Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
 准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。

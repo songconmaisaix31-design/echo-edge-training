@@ -4,13 +4,18 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.engine import URL
+
+import demo_config
 
 Base = declarative_base()
-engine = create_engine(os.environ.get("ECHO_DATABASE_URL", "sqlite:///./echo.db"))
+database = (URL.create("sqlite", database=str(demo_config.ROOT / "demo.sqlite3")) if demo_config.ROOT is not None
+            else os.environ.get("ECHO_DATABASE_URL", "sqlite:///./echo.db"))
+engine = create_engine(database)
 Session = sessionmaker(engine, expire_on_commit=False)
 
 def now():
@@ -68,8 +73,13 @@ def token_hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 def current(request: Request):
-    token = request.cookies.get("echo_session", "")
     with Session() as db:
+        if demo_config.ROOT is not None:
+            operator = db.scalar(select(User).where(User.name == demo_config.OPERATOR, User.role == "operator"))
+            if operator is None:
+                raise HTTPException(503, "演示操作员尚未初始化")
+            return operator
+        token = request.cookies.get("echo_session", "")
         login = db.get(Login, token_hash(token))
         if not login or login.expires <= now():
             raise HTTPException(401, "请先登录")
@@ -103,9 +113,6 @@ def summary(case):
     return {"id": case.id, "title": case.title, "notes": case.notes, "status": case.status}
 
 def register(app):
-    from fastapi import Response
-
-    @app.post("/api/v1/login")
     def login(body: Credentials, response: Response):
         with Session() as db:
             user = db.scalar(select(User).where(User.name == body.name))
@@ -120,7 +127,6 @@ def register(app):
                                 secure=os.environ.get("ECHO_SECURE_COOKIE")=="1", max_age=28800)
             return {"name":user.name,"role":user.role}
 
-    @app.post("/api/v1/logout")
     def logout(request: Request, response: Response, user=Depends(current)):
         with Session() as db:
             db.delete(db.get(Login, token_hash(request.cookies["echo_session"])))
@@ -132,6 +138,12 @@ def register(app):
     @app.get("/api/v1/me")
     def me(user=Depends(current)):
         return {"name":user.name,"role":user.role}
+
+    if demo_config.ROOT is not None:
+        app.post("/api/v1/local-session")(me)
+    else:
+        app.post("/api/v1/login")(login)
+        app.post("/api/v1/logout")(logout)
 
     @app.get("/api/v1/cases")
     def cases(q: str="", status: str="", user=Depends(current)):

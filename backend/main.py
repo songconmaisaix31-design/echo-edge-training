@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import BoundedSemaphore
 
 import av
+import demo_config
 import model_inference
 import medical_review
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -27,7 +28,8 @@ async def lifespan(app):
 
 app = FastAPI(title="Echo Edge Media API", lifespan=lifespan)
 register(app)
-ROOT = Path(os.environ.get("ECHO_MEDIA_ROOT", str(Path(tempfile.gettempdir()) / "echo-edge-media")))
+ROOT = (demo_config.ROOT / "demo-media" if demo_config.ROOT is not None
+        else Path(os.environ.get("ECHO_MEDIA_ROOT", str(Path(tempfile.gettempdir()) / "echo-edge-media"))))
 LIMIT = 64 * 1024 * 1024
 MAX_FRAMES = 3600
 SLOTS = BoundedSemaphore(1)

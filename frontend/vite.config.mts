@@ -4,7 +4,7 @@ import tailwind from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [tailwind()],
   define: {
-    __ECHO_LOCAL_WORKSTATION__: 'false',
+    __ECHO_LOCAL_WORKSTATION__: JSON.stringify(process.env.ECHO_DEMO_BUILD === '1'),
     __ECHO_PUBLIC_SAMPLES__: JSON.stringify(process.env.ECHO_PUBLIC_SAMPLES === '1'),
   },
   server: {
