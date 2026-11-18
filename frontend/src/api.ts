@@ -33,8 +33,8 @@ function responseErrorMessage(body:unknown):string{
  return REQUEST_FAILED
 }
 
-async function sendRequest<T>(path:string,init?:RequestInit):Promise<T>{
- const response=await fetch(apiUrl(path),init)
+async function sendRequest<T>(url:string,init?:RequestInit):Promise<T>{
+ const response=await fetch(url,init)
  const text=await response.text()
  let body:unknown=undefined
  if(text){
@@ -49,7 +49,11 @@ export function apiRequest<T=unknown>(path:string,init?:RequestInit):Promise<T>{
  const signal=init?.signal
   ? AbortSignal.any([sessionRequests.signal,init.signal])
   : sessionRequests.signal
- return sendRequest<T>(path,{...init,signal})
+ return sendRequest<T>(apiUrl(path),{...init,signal})
+}
+
+export function publicSampleCatalog(signal:AbortSignal):Promise<unknown>{
+ return sendRequest('/samples/catalog.json',{credentials:'omit',signal})
 }
 
 function jsonRequest(body:unknown,method:string):RequestInit{
@@ -57,14 +61,14 @@ function jsonRequest(body:unknown,method:string):RequestInit{
 }
 
 export async function loginSession<T>(credentials:unknown):Promise<T>{
- const user=await sendRequest<T>('/login',jsonRequest(credentials,'POST'))
+ const user=await sendRequest<T>(apiUrl('/login'),jsonRequest(credentials,'POST'))
  sessionRequests=new AbortController()
  return user
 }
 
 export async function logoutSession():Promise<void>{
  sessionRequests.abort()
- try{await sendRequest('/logout',{method:'POST'})}
+ try{await sendRequest(apiUrl('/logout'),{method:'POST'})}
  catch(error){
   sessionRequests=new AbortController()
   throw error

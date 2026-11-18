@@ -5,6 +5,7 @@ import {Button} from './button'
 import Modules from './Modules'
 import Exams from './Exams'
 import Patients from './Patients'
+import PublicSamples from './PublicSamples'
 import {apiRequest,errorMessage,loginSession,logoutSession} from './api'
 import {structureEvidenceHref} from './diagnosis-contract'
 import {useCapabilities} from './use-capabilities'
@@ -65,6 +66,10 @@ function App(){
   {error?<><p role="alert">{error}</p><Button onClick={()=>location.reload()}>重新连接</Button></>
    :<p role="status">正在连接本机工作站…</p>}
  </main>
+ if(!user&&__ECHO_PUBLIC_SAMPLES__)return <main className="dashboard">
+  <h1>Echo Edge 工作站</h1>
+  {loading?<p role="status">正在读取工作站权限…</p>:<><p>此工作站需要已授权的会话。</p><a href="/">查看公开样例</a></>}
+ </main>
  if(!user)return <div className="auth-layout"><section className="auth-brand"><div className="wordmark"><Activity/> Echo Edge</div><div><span className="eyebrow">儿童心脏超声 · 研究工作区</span><h1>让每一段影像<br/>得到细致审阅。</h1><p>连接影像、分析与专家复核的专业工作空间。</p></div><small>内部研究与验证</small></section><section className="auth-form"><form onSubmit={login}><span className="eyebrow">欢迎回来</span><h2>登录工作区</h2><p>使用由管理员开通的账号继续。</p><label>账号<input name="name" required autoComplete="username" placeholder="请输入账号"/></label><label>密码<input name="password" type="password" required autoComplete="current-password" placeholder="请输入密码"/></label>{error&&<div role="alert" className="error">{error}</div>}<Button disabled={busy||loading}>{busy?'正在登录…':'登录'}<ArrowUpRight size={16}/></Button><details><summary>首次使用，如何创建账号？</summary><p>请在本机运行已提供的 Create-Operator.cmd，设置密码后使用 operator 登录。其他账号由管理员开通。</p></details></form></section></div>
  const visible=cases.filter(c=>(c.title.includes(search)||String(c.id).includes(search))&&(!status||c.status===status))
  const selected=navigation.find(n=>n[0]===page.split('/')[0])
@@ -73,7 +78,8 @@ function App(){
 }
 const root=document.getElementById('root')
 if(!root)throw new Error('找不到应用根节点')
-createRoot(root).render(<App/>)
+const showPublicSamples=__ECHO_PUBLIC_SAMPLES__&&!__ECHO_LOCAL_WORKSTATION__&&!/^\/workstation\/?$/.test(location.pathname)
+createRoot(root).render(showPublicSamples?<PublicSamples/>:<App/>)
 
 
 

@@ -142,6 +142,10 @@ To configure Stanford and CardiacUDC, set the model variables from the deploymen
 
 要配置 Stanford 和 CardiacUDC，请在 `work/local-workstation/settings.env` 或启动环境中填写部署文档中的模型变量，使用文件的绝对路径。将 `ECHO_INFERENCE_SCRIPT` 指向仓库中的 `infer_stanford.py`。两个模型均在本机执行推理。
 
+Build the public sample homepage with `ECHO_PUBLIC_SAMPLES=1`. After building, run `python scripts/build-public-samples.py <approved-archive.zip> frontend/dist` in a Python environment with PyAV and H.264 encoding. Publish the resulting `dist` directory. The operator interface is at `/workstation` and uses an authorized session.
+
+设置 `ECHO_PUBLIC_SAMPLES=1` 构建公开样例首页。构建后用支持 PyAV 和 H.264 编码的 Python 环境执行 `python scripts/build-public-samples.py <获准公开的样例压缩包> frontend/dist`，发布生成的 `dist` 目录。操作员使用已授权会话访问 `/workstation`。
+
 Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
 准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
