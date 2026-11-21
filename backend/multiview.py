@@ -11,9 +11,7 @@ from analysis_contract import FINISHED, INSUFFICIENT, InsufficientEvidence, job_
 from analysis_jobs import AnalysisJob
 from exam_parameters import checked_exam
 from medical_review import MediaIndex
-
-
-View = Literal["A4C", "A2C", "A3C", "A5C", "PLAX", "PSAX", "subcostal", "suprasternal"]
+from multiview_coverage import View, view_coverage
 
 
 class MultiviewSetup(db.Base):
@@ -143,8 +141,8 @@ def assessment(session, exam_id, editable):
     stored = json.loads(row.data) if row else {"required_views": [], "frames": []}
     required = stored["required_views"]
     frames = [FrameEvidence.model_validate(frame) for frame in stored["frames"]]
-    covered = {frame.view for frame in frames}
-    coverage = [Coverage(view=view, status="covered" if view in covered else "missing") for view in required]
+    coverage = [Coverage(view=view, status=status) for view, status in
+                view_coverage(required, (frame.view for frame in frames)).items()]
     fields = dict(exam_id=exam_id, revision=row.revision if row else 0, editable=editable,
                   required_views=required, frames=frames, coverage=coverage)
     if not required:
