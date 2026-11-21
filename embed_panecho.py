@@ -1,37 +1,24 @@
-r"""阶段一：用冻结的 PanEcho 把视频变成向量，缓存到 work/emb/。
-
-这一步不使用任何标签，也不训练任何参数，只做编码。产出是每个视频一个
-``(n_clips, 768)`` 的 float32 数组，供 ``train_emb_head.py`` 直接读取。
-
-设计边界：
-
-- PanEcho 权重与代码不进入仓库（CC BY-NC-SA 4.0 / AGPLv3），通过参数指向授权位置。
-- 患者号、视频清单和缓存目录写在 ``work/`` 下，已被 .gitignore 排除。
-- clip 采样是确定的（等间距起点），同一视频重复运行结果一致，便于断点续跑。
-
-用法::
-
-    python -X utf8 embed_panecho.py `
-      --weights '.\work\models\panecho.pt' --panecho-repo '.\work\PanEcho' `
-      --video-dir '.\data\videos' --index '.\work\echo-index-private.json' `
-      --out '.\work\emb' --clips 16
-"""
-
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import sys
 import time
 import types
-from pathlib import Path
+from collections import Counter
+from pathlib import Path, PurePosixPath
+from zipfile import ZipFile
 
 import av
 import numpy as np
 import torch
 import torch.nn.functional as functional
 from av.video.reformatter import VideoReformatter
+
+from embedding_labels import validate_labels
 
 IMAGE_SIZE = 224
 CLIP_LEN = 16
@@ -52,7 +39,7 @@ def scaled_size(frame):
     return tuple(max(1, round(side * scale)) for side in (frame.width, frame.height))
 
 
-def to_input(frame, reformatter):
+def to_image(frame, reformatter):
     size = scaled_size(frame)
     resized = reformatter.reformat(frame, width=size[0], height=size[1], format="rgb24",
                                    interpolation="AREA", threads=1)
@@ -61,68 +48,59 @@ def to_input(frame, reformatter):
     top = (IMAGE_SIZE - size[1]) // 2
     left = (IMAGE_SIZE - size[0]) // 2
     padded[top:top + size[1], left:left + size[0]] = image
-    tensor = torch.from_numpy(padded).permute(2, 0, 1).float().div_(255)
-    mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
-    std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
-    return (tensor - mean) / std
+    return padded
 
 
 def clip_starts(total_frames, n_clips, clip_len=CLIP_LEN):
-    """等间距起点；不足一个 clip 时全部从 0 开始并由首帧补齐。"""
+    """等间距起点；不足一个 clip 时全部从 0 开始。"""
     if total_frames <= clip_len:
         return [0] * n_clips
     span = total_frames - clip_len
     return [int(round(value)) for value in np.linspace(0, span, n_clips)]
 
 
-def read_clip(path, start, clip_len=CLIP_LEN):
-    """从 start 帧起读 clip_len 帧，返回 (clip_len, 3, 224, 224)；不足时补末帧。
-
-    帧率缺失的容器（部分 .ogv）无法按时间戳定位，退回顺序解码并丢弃前缀帧。
-    """
-    with av.open(str(path)) as container:
+def video_clips(video, n_clips):
+    total = count_frames(video)
+    if not total:
+        raise ValueError("视频没有可解码帧")
+    indices = np.minimum(np.asarray(clip_starts(total, n_clips))[:, None] + np.arange(CLIP_LEN),
+                         total - 1)
+    unique, inverse = np.unique(indices, return_inverse=True)
+    frames = []
+    with av.open(video) as container:
         stream = configure(container)
         reformatter = VideoReformatter()
-        rate = stream.average_rate or stream.guessed_rate
-        if start and rate:
-            container.seek(int(start * av.time_base / float(rate)), stream=stream)
-        frames = []
-        position = 0
-        for frame in container.decode(stream):
-            if rate and frame.pts is not None:
-                index = int(round(float(frame.pts * frame.time_base) * float(rate)))
-            else:
-                index = position
-            position += 1
-            if index < start:
-                continue
-            frames.append(to_input(frame, reformatter))
-            if len(frames) == clip_len:
-                break
-        if not frames:
-            raise ValueError(f"无法解码：{path}")
-        while len(frames) < clip_len:
-            frames.append(frames[-1])
-        return torch.stack(frames, 0)                      # (T, 3, H, W)
+        for index, frame in enumerate(container.decode(stream)):
+            if index == unique[len(frames)]:
+                frames.append(to_image(frame, reformatter))
+                if len(frames) == len(unique):
+                    break
+    if len(frames) != len(unique):
+        raise ValueError("视频帧数少于容器声明的帧数")
+    return np.stack(frames), inverse.reshape(n_clips, CLIP_LEN), total
 
 
-def count_frames(path):
-    with av.open(str(path)) as container:
+def count_frames(video):
+    with av.open(video) as container:
         stream = container.streams.video[0]
-        if stream.frames:
-            return int(stream.frames)
-        return sum(1 for _ in container.decode(stream))
+        total = stream.frames or sum(1 for _ in container.decode(stream))
+    if isinstance(video, io.BytesIO):
+        video.seek(0)
+    return total
 
 
-def encode_video(model, path, n_clips, device):
-    total = count_frames(path)
-    starts = clip_starts(total, n_clips)
-    vectors = []
-    for start in starts:
-        clip = read_clip(path, start).permute(1, 0, 2, 3).unsqueeze(0).to(device)
-        with torch.no_grad():
-            vectors.append(model(clip).squeeze(0).float().cpu().numpy())
-    return np.stack(vectors, 0).astype(np.float32), total
+@torch.inference_mode()
+def encode_video(model, video, n_clips, device, dtype):
+    images, indices, total = video_clips(video, n_clips)
+    frames = torch.from_numpy(images).to(device).float().div_(255)
+    mean = torch.tensor(IMAGENET_MEAN, device=device)
+    std = torch.tensor(IMAGENET_STD, device=device)
+    frames = ((frames - mean) / std).to(dtype)
+    clips = frames[torch.from_numpy(indices).to(device)].permute(0, 4, 1, 2, 3).contiguous()
+    vectors = torch.cat([model(chunk) for chunk in clips.split(4)]).float().cpu().numpy()
+    if not np.isfinite(vectors).all():
+        raise ValueError("PanEcho 输出含非有限值")
+    return vectors, total
 
 
 def build_encoder(weights: Path, panecho_repo: Path):
@@ -143,63 +121,148 @@ def build_encoder(weights: Path, panecho_repo: Path):
     return encoder
 
 
-def key_for(path: Path, root: Path) -> str:
-    relative = path.relative_to(root).as_posix() if root in path.parents else path.name
+def key_for(relative: str) -> str:
     return hashlib.sha1(relative.encode("utf-8")).hexdigest()[:16]
+
+
+def pediatric_sources(archive):
+    from train_echonet_views import (TRAIN_SPLITS, VAL_SPLITS, VIEWS, published_patient,
+                                    read_sources, verify_rotation)
+
+    errors = []
+    clips = read_sources(archive, errors)
+    if errors:
+        raise ValueError(f"EchoNet-Pediatric 归档未通过检查，共 {len(errors)} 项：{errors[0]['error']}")
+    verify_rotation(clips)
+    labels = {}
+    for view in VIEWS:
+        root = f"pediatric_echo_avi/{view}"
+        with archive.open(f"{root}/FileList.csv") as entry, \
+                io.TextIOWrapper(entry, encoding="utf-8-sig", newline="") as table:
+            for row in csv.DictReader(table):
+                labels[f"{root}/Videos/{row['FileName']}"] = float(row["EF"])
+    return {
+        path: {"subject": published_patient(path), "ef": labels[path],
+               "split": "train" if fold in TRAIN_SPLITS else "val" if fold in VAL_SPLITS else "test"}
+        for path, _, fold, _, _ in clips
+    }
+
+
+def directory_sources(root, index):
+    videos = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_SUFFIXES)
+    names = Counter(video.name for video in videos)
+    sources = {}
+    for video in videos:
+        relative = video.relative_to(root).as_posix()
+        metadata = index.get(relative)
+        if relative not in index and video.name in index:
+            if names[video.name] != 1:
+                raise ValueError(f"索引中的文件名对应多个视频，请使用相对路径：{video.name}")
+            metadata = index[video.name]
+        sources[relative] = metadata
+    return sources
+
+
+def save_index(path, manifest):
+    pending = path.with_suffix(".json.pending")
+    pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    pending.replace(path)
+
+
+def embed_sources(args, sources, open_video):
+    if not sources:
+        raise ValueError("没有找到视频")
+    for source, info in sources.items():
+        if args.index or args.pediatric_archive:
+            validate_labels(info, source)
+
+    selected = list(sources)[:args.limit or None]
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA 不可用")
+    if args.fp16 and device.type != "cuda":
+        raise ValueError("--fp16 需要 CUDA")
+    dtype = torch.float16 if args.fp16 else torch.float32
+    precision = "fp16" if args.fp16 else "fp32"
+    args.out.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.out / "index.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    pending = []
+    for source in selected:
+        key = key_for(source)
+        existing = manifest.get(key)
+        target = args.out / f"{key}.npy"
+        if existing is None or not target.is_file():
+            pending.append((source, key, target))
+            continue
+        if (existing["source"] != source or existing["n_clips"] != args.clips
+                or existing.get("precision", "fp32") != precision):
+            raise ValueError(f"缓存设置与本次输入不一致：{key}，请使用新的 --out 目录")
+        if sources[source] is not None:
+            existing.update({field: sources[source][field] for field in ("subject", "ef", "split")
+                             if field in sources[source]})
+    if set(manifest).difference(key_for(source) for source in sources):
+        raise ValueError("缓存包含当前输入以外的嵌入，请使用新的 --out 目录")
+    if manifest:
+        save_index(manifest_path, manifest)
+
+    print(f"{len(selected)} 个视频，待编码 {len(pending)}，设备 {device}，精度 {precision}", flush=True)
+    started = time.monotonic()
+    if pending:
+        model = build_encoder(args.weights, args.panecho_repo).to(device=device, dtype=dtype)
+        model.encoder.to(memory_format=torch.channels_last)
+    for position, (source, key, target) in enumerate(pending, start=1):
+        embedding, total = encode_video(model, open_video(source), args.clips, device, dtype)
+        temporary = target.with_suffix(".npy.pending")
+        with temporary.open("wb") as file:
+            np.save(file, embedding)
+        temporary.replace(target)
+        entry = {"source": source, "n_frames": total, "n_clips": int(embedding.shape[0]),
+                 "dim": int(embedding.shape[1]), "precision": precision}
+        if sources[source] is not None:
+            entry.update({field: sources[source][field] for field in ("subject", "ef", "split")
+                          if field in sources[source]})
+        manifest[key] = entry
+        if position % 25 == 0 or position == len(pending):
+            rate = (time.monotonic() - started) / position
+            save_index(manifest_path, manifest)
+            print(f"[{position}/{len(pending)}] {rate:.2f}s/视频", flush=True)
+
+    summary = {"videos": len(manifest), "clips": args.clips, "device": str(device), "precision": precision,
+               "encoded": len(pending), "seconds": round(time.monotonic() - started, 1)}
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"完成：{len(manifest)} 个嵌入 → {args.out}", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description="用 PanEcho 抽取视频嵌入")
     parser.add_argument("--weights", type=Path, required=True)
     parser.add_argument("--panecho-repo", type=Path, required=True)
-    parser.add_argument("--video-dir", type=Path, required=True)
-    parser.add_argument("--index", type=Path, help="可选：{相对路径或文件名: {subject, split}}")
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--video-dir", type=Path)
+    inputs.add_argument("--pediatric-archive", type=Path, help="EchoNet-Pediatric 原始 ZIP，直接读取视频和标签")
+    parser.add_argument("--index", type=Path, help="可选：{相对路径或文件名: {subject, ef, split}}")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--clips", type=int, default=16)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--fp16", action="store_true", help="CUDA 编码使用 FP16，输出仍为 float32")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
-    index = json.loads(args.index.read_text(encoding="utf-8")) if args.index else {}
-    args.out.mkdir(parents=True, exist_ok=True)
-
-    videos = sorted(p for p in args.video_dir.rglob("*") if p.suffix.lower() in VIDEO_SUFFIXES)
-    if args.limit:
-        videos = videos[: args.limit]
-    model = build_encoder(args.weights, args.panecho_repo).to(args.device)
-    print(f"{len(videos)} 个视频，设备 {args.device}", flush=True)
-
-    manifest_path = args.out / "index.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    started = time.time()
-    for position, video in enumerate(videos, start=1):
-        key = key_for(video, args.video_dir)
-        target = args.out / f"{key}.npy"
-        if target.exists() and key in manifest:
-            continue
-        embedding, total = encode_video(model, video, args.clips, args.device)
-        np.save(target, embedding)
-        entry = {"source": video.relative_to(args.video_dir).as_posix(),
-                 "n_frames": total, "n_clips": int(embedding.shape[0]),
-                 "dim": int(embedding.shape[1])}
-        entry.update(index.get(video.name, index.get(entry["source"], {})))
-        manifest[key] = entry
-        if position % 5 == 0 or position == len(videos):
-            rate = (time.time() - started) / max(1, position)
-            print(f"[{position}/{len(videos)}] {entry['source']} {embedding.shape} "
-                  f"{rate:.1f}s/视频", flush=True)
-        if position % 25 == 0:
-            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
-                                     encoding="utf-8")
-
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    summary = {"videos": len(manifest), "clips": args.clips,
-               "seconds": round(time.time() - started, 1)}
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"完成：{len(manifest)} 个嵌入 → {args.out}", flush=True)
+    if args.clips < 1 or args.limit < 0:
+        parser.error("--clips 至少为 1，--limit 至少为 0")
+    if args.pediatric_archive:
+        if args.index:
+            parser.error("--pediatric-archive 直接使用归档标签，无需 --index")
+        with ZipFile(args.pediatric_archive) as archive:
+            embed_sources(args, pediatric_sources(archive), lambda source: io.BytesIO(archive.read(source)))
+    else:
+        index = json.loads(args.index.read_text(encoding="utf-8")) if args.index else {}
+        embed_sources(args, directory_sources(args.video_dir, index),
+                      lambda source: str(args.video_dir / PurePosixPath(source)))
 
 
 if __name__ == "__main__":

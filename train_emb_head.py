@@ -1,30 +1,3 @@
-r"""阶段二：在冻结的 PanEcho 嵌入上训练轻量注意力头。
-
-输入是 ``embed_panecho.py`` 产出的 ``work/emb/<key>.npy``（每个视频 ``(n_clips, 768)``），
-编码器不再前向，所以这一步在 CPU 上以分钟计。
-
-与 EchoFocus 的关系：结构同源（不切面、Transformer 编码 + 池化 + 线性头），
-但池化换成显式注意力、层数可配，并且用本仓库自己的数据与标签重训。
-
-功能：
-
-- 按患儿划分，训练/验证/测试不共享病人
-- ``--calibrate`` 在验证集上拟合仿射校准，同时报告校准前后
-- ``--bootstrap`` 以患儿为单位重采样，给出 MAE / AUROC 的 95% 区间
-- ``--folds`` 对训练池做患儿级 K 折，报告均值±标准差（选型稳定性，不是最终模型）
-- ``--sweep`` 小网格搜索，按折均值排序
-- ``--predictions`` 导出 ``{source: ef_pred}``，供 ``scripts/ef_review.py analyze`` 使用
-- ``--dump-attention`` 导出每个测试视频的片段注意力权重
-
-用法::
-
-    python -X utf8 train_emb_head.py `
-      --emb '.\work\emb' --run-dir '.\runs\emb-head-v1' --epochs 200 `
-      --report '.\runs\emb-head-v1\test.json' `
-      --predictions '.\runs\emb-head-v1\predictions.json' `
-      --dump-attention '.\runs\emb-head-v1\attention.json'
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -36,6 +9,8 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
+
+from embedding_labels import validate_labels
 
 DEFAULT_GRID = [
     {"dim_model": 128, "layers": 1},
@@ -75,31 +50,37 @@ def load_manifest(emb_dir: Path):
     if not manifest_path.exists():
         raise SystemExit(f"缺少 {manifest_path}，先运行 embed_panecho.py")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or not manifest:
+        raise ValueError("index.json 需要包含至少一条嵌入记录")
     entries = []
     for key, info in manifest.items():
         path = emb_dir / f"{key}.npy"
-        if not path.exists() or "ef" not in info:
-            continue
-        entries.append({"key": key, "path": path, **info})
-    if not entries:
-        raise SystemExit("没有可用样本：index.json 里的条目需要 ef 字段")
-    missing = [e["key"] for e in entries if "subject" not in e]
-    if missing:
-        raise SystemExit(f"{len(missing)} 条嵌入缺少 subject，无法按患儿划分：{missing[:3]}")
+        validate_labels(info, key)
+        if not path.is_file():
+            raise ValueError(f"索引中的嵌入文件缺失：{key}")
+        entries.append({**info, "key": key, "path": path})
+    if any(path.stem not in manifest for path in emb_dir.glob("*.npy")):
+        raise ValueError("嵌入目录含未登记的数组，请先完成阶段一")
     return entries
 
 
 def split_by_subject(entries, val_frac, seed):
     train_pool = [e for e in entries if e.get("split", "train") == "train"]
+    val = [e for e in entries if e.get("split") == "val"]
     test = [e for e in entries if e.get("split") == "test"]
-    subjects = sorted({e["subject"] for e in train_pool})
-    random.Random(seed).shuffle(subjects)
-    n_val = max(1, round(len(subjects) * val_frac))
-    val_subjects = set(subjects[:n_val])
-    train = [e for e in train_pool if e["subject"] not in val_subjects]
-    val = [e for e in train_pool if e["subject"] in val_subjects]
-    if not val or not test:
+    train = train_pool
+    if not val:
+        subjects = sorted({e["subject"] for e in train_pool})
+        random.Random(seed).shuffle(subjects)
+        n_val = max(1, round(len(subjects) * val_frac))
+        val_subjects = set(subjects[:n_val])
+        train = [e for e in train_pool if e["subject"] not in val_subjects]
+        val = [e for e in train_pool if e["subject"] in val_subjects]
+    if not train or not val or not test:
         raise SystemExit(f"划分失败：train {len(train)} val {len(val)} test {len(test)}")
+    groups = [{e["subject"] for e in split} for split in (train, val, test)]
+    if sum(map(len, groups)) != len(set.union(*groups)):
+        raise ValueError("同一 subject 出现在多个数据划分中")
     return train, val, test
 
 
@@ -130,10 +111,11 @@ def score(y_true, y_pred):
     return out
 
 
-def predict(model, x):
+@torch.inference_mode()
+def predict(model, x, batch):
     model.eval()
-    with torch.no_grad():
-        return model(x).squeeze(-1).cpu().numpy() * 100.0
+    device = next(model.parameters()).device
+    return torch.cat([model(chunk.to(device)).squeeze(-1).cpu() for chunk in x.split(batch)]).numpy() * 100.0
 
 
 def fit_calibration(y_true, y_pred):
@@ -182,18 +164,20 @@ def train_model(x_train, y_train, x_val, y_val, args, config=None, seed=None):
     if seed is not None:
         torch.manual_seed(seed)
         random.seed(seed)
-    model = EmbeddingHead(x_train.shape[2], config["dim_model"], config["layers"])
+    device = torch.device(args.device)
+    model = EmbeddingHead(x_train.shape[2], config["dim_model"], config["layers"]).to(device)
     with torch.no_grad():
         model.head.bias.fill_(float(y_train.mean()) / 100.0)
         model.head.weight.mul_(0.1)
+    x_train, y_train = x_train.to(device), y_train.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     loss_fn = nn.SmoothL1Loss(beta=0.1)
     best, best_state, history = float("inf"), None, []
     for epoch in range(1, args.epochs + 1):
         model.train()
-        order = torch.randperm(len(x_train))
-        total, count = 0.0, 0
+        order = torch.randperm(len(x_train), device=device)
+        total, count = torch.zeros((), device=device), 0
         for start in range(0, len(order), args.batch):
             index = order[start:start + args.batch]
             if len(index) < 2:
@@ -203,15 +187,16 @@ def train_model(x_train, y_train, x_val, y_val, args, config=None, seed=None):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            total += loss.item() * len(index)
+            total += loss.detach() * len(index)
             count += len(index)
         scheduler.step()
-        if epoch % 20 == 0 or epoch == 1:
-            metrics = score(y_val.numpy(), predict(model, x_val))
-            history.append({"epoch": epoch, "loss": round(total / max(count, 1), 4), **metrics})
+        if epoch % 20 == 0 or epoch in (1, args.epochs):
+            metrics = score(y_val.numpy(), predict(model, x_val, args.batch))
+            history.append({"epoch": epoch, "loss": round(total.item() / max(count, 1), 4), **metrics})
+            print(f"轮次 {epoch}/{args.epochs}，验证 MAE {metrics['mae']:.3f}", flush=True)
             if metrics["mae"] < best:
                 best = metrics["mae"]
-                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                best_state = {k: v.to("cpu", copy=True) for k, v in model.state_dict().items()}
     if best_state is not None:
         model.load_state_dict(best_state)
     return model, best, history
@@ -256,8 +241,18 @@ def main():
     parser.add_argument("--calibrate", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--bootstrap", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", default="cpu", help="训练设备，例如 cpu、cuda 或 cuda:0")
     args = parser.parse_args()
+    if args.epochs < 1 or args.batch < 1:
+        parser.error("--epochs 和 --batch 至少为 1")
 
+    device = torch.device(args.device)
+    device_name = str(device)
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA 不可用")
+        device_name = torch.cuda.get_device_name(device)
+        torch.backends.cuda.matmul.fp32_precision = "tf32"
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     args.run_dir.mkdir(parents=True, exist_ok=True)
@@ -268,7 +263,7 @@ def main():
     x_val, y_val = to_tensors(val)
     x_test, y_test = to_tensors(test)
     print(f"样本：train {len(train)} / val {len(val)} / test {len(test)}；"
-          f"每视频 {x_train.shape[1]} clip × {x_train.shape[2]} 维", flush=True)
+          f"每视频 {x_train.shape[1]} clip × {x_train.shape[2]} 维；设备 {device_name}", flush=True)
 
     constant = score(y_test.numpy(), np.full(len(y_test), float(y_train.mean())))
     print(f"常数基线（训练均值 {float(y_train.mean()):.1f}）：{constant}", flush=True)
@@ -292,16 +287,19 @@ def main():
 
     model, best, history = train_model(x_train, y_train, x_val, y_val, args)
     parameters = sum(p.numel() for p in model.parameters())
-    val_pred = predict(model, x_val)
-    test_pred = predict(model, x_test)
+    val_pred = predict(model, x_val, args.batch)
+    test_pred = predict(model, x_test, args.batch)
     test_metrics = score(y_test.numpy(), test_pred)
 
     report = {
         "model": "embedding-attention-head",
         "encoder": "PanEcho convnext_tiny (frozen)",
+        "device": device_name,
         "parameters": parameters,
         "clips_per_video": int(x_train.shape[1]),
         "split": {"train": len(train), "val": len(val), "test": len(test), "unit": "video"},
+        "subjects": {name: len({entry["subject"] for entry in split})
+                     for name, split in (("train", train), ("val", val), ("test", test))},
         "val": score(y_val.numpy(), val_pred),
         "test": test_metrics,
         "constant_baseline_test": constant,
@@ -328,6 +326,9 @@ def main():
 
     report_path = args.report or (args.run_dir / "test.json")
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": {key: value.cpu() for key, value in model.state_dict().items()},
+                "dim_in": x_train.shape[2], "dim_model": args.dim_model, "layers": args.layers,
+                "validation_mae": best}, args.run_dir / "best.pt")
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if args.predictions:
@@ -349,7 +350,7 @@ def main():
         rows = []
         with torch.no_grad():
             for offset in range(0, len(x_test), 16):
-                chunk = x_test[offset:offset + 16]
+                chunk = x_test[offset:offset + 16].to(device)
                 _, weights = model.pooled(chunk)
                 weights = weights.cpu().numpy()
                 for index, entry in enumerate(test[offset:offset + 16]):

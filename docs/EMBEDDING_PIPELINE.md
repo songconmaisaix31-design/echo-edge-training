@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 输入 | 原始视频 | `(n_clips, 768)` 数组 |
 | 参数更新 | 无（完全冻结） | 只更新头，约 0.9 M |
-| 成本 | 每视频数秒，一次性 | 全量一轮 < 1 秒 |
+| 成本 | 编码一次，后续训练复用缓存 | CAMUS 缓存训练一轮少于 1 秒 |
 | 产物 | `work/emb/*.npy` | `runs/emb-head-*/best.pt` |
 | 失败影响 | 编码器不合格 → 后面全白做 | 只影响当前标签与切分 |
 
@@ -35,8 +35,6 @@
 
 494 段 CAMUS 实测：8 clip 用 CPU 35 分钟；16 clip 用 GPU 11 分钟，其中解码与预处理占比不小。
 
-按 1.3 秒/段估算，EchoNet-Peds 的 7,643 段在 GPU 上约 **2.8 小时**，CPU 上约 18 小时。**编码应该在 GPU 机器上跑一次，产物随权重回传**，不要每次重跑。
-
 ## 数据边界
 
 - 视频与嵌入都留在授权环境：`work/emb/` 与 `work/echo-index-private.json` 已被 `.gitignore` 排除。
@@ -45,7 +43,30 @@
 
 ## 命令
 
-阶段一（编码，可断点续跑）：
+### EchoNet-Pediatric 原始归档
+
+阶段一直接读取官方 ZIP 的 A4C 和 PSAX 视频。每条嵌入的 `subject` 来自发布方文件名中的匿名患儿编号，`ef` 来自该视频所在切面的 `FileList.csv`，单位为百分比。按发布方第 0 次轮转划分，原始折 2–9 用于训练，折 1 用于验证，折 0 用于测试。输出索引和数组存放在本机忽略目录。
+
+```powershell
+$python = '.\.venv\Scripts\python.exe'
+$archive = 'C:\path\to\EchoNet - Pediatric_files.zip'
+$emb = '.\work\pediatric-emb'
+$run = '.\runs\pediatric-emb-head'
+
+& $python -X utf8 .\embed_panecho.py `
+  --pediatric-archive $archive --weights '.\work\models\panecho.pt' `
+  --panecho-repo '.\work\PanEcho' --out $emb --clips 16 --device cuda --fp16 `
+  --report (Join-Path $run 'encode.json')
+
+& $python -X utf8 .\train_emb_head.py --emb $emb --run-dir $run `
+  --device cuda --epochs 200 --report (Join-Path $run 'test.json')
+```
+
+中断后用同一归档、权重、精度、片段数和输出目录重试。FP16 用于编码计算，保存的嵌入为 float32。阶段二保留归档指定的验证集，发现无效的 `subject` 或 `ef`、索引与数组不一致、同一患儿跨集合时终止。
+
+### 本地视频与标签表
+
+自备视频时，按视频目录下的相对路径提供标签。文件名在目录内唯一时也可用作标签键。
 
 ```powershell
 $python = '.\.venv\Scripts\python.exe'
@@ -55,17 +76,17 @@ $python = '.\.venv\Scripts\python.exe'
   --out '.\work\emb' --clips 8 --report '.\runs\embed\summary.json'
 ```
 
-`--index` 是可选的对照表，形如 `{"某文件.avi": {"subject": "P0001", "split": "train", "ef": 55.0}}`；阶段二要求每条嵌入都有 `subject` 与 `ef`，否则直接报错而不是默认分组。
+`--index` 的格式为 `{"相对路径.avi": {"subject": "P0001", "split": "train", "ef": 55.0}}`。给已缓存的视频补齐或更新标签时，用同样的编码参数和输出目录重跑，阶段一更新对应记录并复用现有数组。只提取嵌入时可以省略 `--index`。
 
 阶段二（训练头 + 报告）：
 
 ```powershell
 & $python -X utf8 .\train_emb_head.py `
-  --emb '.\work\emb' --run-dir '.\runs\emb-head-v1' --epochs 200 `
+  --emb '.\work\emb' --run-dir '.\runs\emb-head-v1' --epochs 200 --device cuda `
   --report '.\runs\emb-head-v1\test.json'
 ```
 
-报告包含样本量（按视频计）、MAE 口径（EF 百分点）、常数基线对照，以及 EF<50 的 AUROC 与阳性例数。按 [AGENTS.md](../AGENTS.md)，只有报告里的数字可以对外引用。
+阶段二需要训练集与独立测试集。没有指定 `val` 时，从训练集按 `subject` 划出验证集。报告记录各集合的视频数与患儿数、MAE（EF 百分点）、常数基线，以及 EF<50 的 AUROC 与阳性例数。验证集 MAE 最低的模型保存为 `best.pt`。按 [AGENTS.md](../AGENTS.md)，只有报告里的数字可以对外引用。
 
 ## 验证记录
 
