@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, select
 
 import platform_db as db
+from analysis_contract import evidence_shortfall
 from analysis_jobs import AnalysisJob
 from clinical import Examination
 
@@ -74,8 +75,11 @@ def register(app):
                 if (job is None or job.exam_id != key or job.state != "succeeded"
                         or job.model_type != "stanford_view" or not job.output):
                     raise HTTPException(422, "只能引用本次检查的成功切面分析")
+                output = json.loads(job.output)
+                if evidence_shortfall(job.model_type, output) is not None:
+                    raise HTTPException(422, "证据不足的切面分析不能作为报告依据")
                 evidence.append({"id": job.id, "media_id": job.media_id,
-                                 "model_version": job.model_version, "output": json.loads(job.output)})
+                                 "model_version": job.model_version, "output": output})
             snapshot = {"author": user.name, "text": body.text.strip(),
                         "review": review, "analysis": evidence}
             row = ReportVersion(exam_id=key, review_id=body.review_id, author=user.id,

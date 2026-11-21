@@ -75,9 +75,9 @@ export default function Modules({page,role}:{page:string;role:string}){
    {isWork&&<section className="queue padded"><h2>AI 分析结果</h2>
     <div className="tabs">{['切面识别','影像质量','心脏结构','异常征象'].map(t=><Button key={t} variant={tab===t?'default':'outline'} onClick={()=>setTab(t)}>{t}</Button>)}</div>
     <div className="availability"><b>{tab} · {tab==='切面识别'?capability:tab==='心脏结构'?structureCapability:reviewCapability}</b></div>
-    {tab==='切面识别'?<ViewAnalysis key={active} id={active} available={modelReady} detail={modelDetail}/>:tab==='心脏结构'?
-     (active&&hasExam?<StructureEvidence key={active} id={active} configured={capabilities?.structureConfigured??null}/>:<p>请选择正式检查中已导入的影像。</p>):
-     active&&hasExam?<MedicalReview key={active+'-'+tab} id={active} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'}/>:<p>请选择正式检查中已导入的影像。</p>}
+    {tab==='切面识别'?<ViewAnalysis key={active} id={active} examId={caseId} available={modelReady} detail={modelDetail}/>:tab==='心脏结构'?
+     (active&&hasExam?<StructureEvidence key={active} id={active} examId={caseId} configured={capabilities?.structureConfigured??null}/>:<p>请选择正式检查中已导入的影像。</p>):
+     active&&hasExam?<MedicalReview key={active+'-'+tab} id={active} examId={caseId} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'}/>:<p>请选择正式检查中已导入的影像。</p>}
    </section>}
   </div>
   {page==='multi'&&<section className="queue padded"><h2>对照影像</h2><select value={compare} onChange={e=>setCompare(e.target.value)}><option value="">选择第二段影像</option>{media.map((id,i)=><option key={id} value={id}>影像 {i+1}</option>)}</select>{active&&compare&&<div className="business-columns"><Player key={'a'+active} id={active}/><Player key={'b'+compare} id={compare}/></div>}<p>资料覆盖情况由医生记录。此页面不生成临床完整性评分。</p></section>}

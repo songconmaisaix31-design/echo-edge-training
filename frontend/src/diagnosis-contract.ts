@@ -1,4 +1,30 @@
-/** Future adapter payload. No endpoint or clinical capability is implied. */
+import type {AnalysisJobResponse, InsufficientEvidence} from './analysis-api.generated'
+
+type DisplayFields = 'id' | 'model_type' | 'model_version' | 'created' | 'state' | 'output' | 'error'
+export type AnalysisJob<T> =
+  | (Pick<Extract<AnalysisJobResponse, {state: 'succeeded'}>, Exclude<DisplayFields, 'output'>> & {output: T})
+  | Pick<Extract<AnalysisJobResponse, {state: 'insufficient_evidence'}>, DisplayFields | 'insufficient_evidence'>
+  | Pick<Extract<AnalysisJobResponse, {output: null}>, DisplayFields>
+
+export function analysisOutcome<T>(job: AnalysisJob<T> | null | undefined) {
+  if (!job) return null
+  switch (job.state) {
+    case 'succeeded':
+      return {kind: 'result', output: job.output} as const
+    case 'insufficient_evidence':
+      return {kind: 'insufficient_evidence', evidence: job.insufficient_evidence, output: job.output} as const
+    case 'pending':
+    case 'running':
+    case 'failed':
+    case 'interrupted':
+      return null
+    default: {
+      const unreachable: never = job
+      throw new Error('无法识别的分析状态 ' + unreachable)
+    }
+  }
+}
+
 export const diagnosisHref = (examId: number | string) => '#diagnosis/' + encodeURIComponent(String(examId))
 export const structureEvidenceHref = (examId: number | string, mediaId?: string) =>
   diagnosisHref(examId) + '/structure' + (mediaId ? '/' + mediaId : '')
@@ -42,6 +68,6 @@ export type DiagnosisModelResult = {
   model: ModelVersion
 } & (
   | { state: 'completed'; output: Output; uncertainty?: string }
-  | { state: 'abstained'; reason: string; uncertainty?: string }
+  | { state: 'insufficient_evidence'; insufficient_evidence: InsufficientEvidence }
   | { state: 'failed'; reason: string }
 )

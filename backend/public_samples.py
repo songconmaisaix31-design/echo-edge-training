@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, Response
 
 import analysis_jobs
 import model_inference
+from analysis_contract import AnalysisJobResponse, job_result
 
 
 @dataclass
@@ -54,7 +55,7 @@ def load_samples(root):
 
 def result(id, model_type, version, fingerprint, output):
     return {"id": id, "model_type": model_type, "model_version": version, "input_sha256": fingerprint,
-            "state": "succeeded", "output": output, "error": None, "created": datetime.now(timezone.utc).isoformat()}
+            **job_result(model_type, "succeeded", output), "error": None, "created": datetime.now(timezone.utc).isoformat()}
 
 
 def register(app):
@@ -91,14 +92,14 @@ def register(app):
         get_frame(sample, index)
         return FileResponse(sample.frames / f"{index}.jpg", media_type="image/jpeg")
 
-    @app.get(base + "/analysis-jobs")
+    @app.get(base + "/analysis-jobs", response_model=list[AnalysisJobResponse], response_model_exclude_unset=True)
     def history(number: int):
         sample = get_sample(number)
         with cache:
             return ([sample.view] if sample.view else []) + (
                 [sample.structures[sample.latest_structure][0]] if sample.latest_structure is not None else [])
 
-    @app.post(base + "/analysis-jobs", status_code=201)
+    @app.post(base + "/analysis-jobs", status_code=201, response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def stanford(number: int):
         sample = get_sample(number)
         with try_slot(slot):
@@ -111,11 +112,17 @@ def register(app):
                 sample.view = job
         return {**job, "cached": False}
 
-    @app.post(base + "/structure-jobs", status_code=201)
+    @app.post(base + "/structure-jobs", status_code=201, response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def structure(number: int, body: analysis_jobs.StructureInput):
         sample = get_sample(number)
         index = body.frame_index
         evidence = get_frame(sample, index)
+        frame = {"media_id": str(number), "frame_index": index, "timestamp_ms": evidence["offsetMs"]}
+        if body.frame_view != "A4C":
+            # 访客的帧确认只返回给当前请求，不写入共享历史。
+            job = result(-(index + 1), analysis_jobs.STRUCTURE_MODEL, "cardiacudc:frame-eligibility",
+                         sample.fingerprint, {"frame": frame, "frame_view": body.frame_view})
+            return {**job, "cached": False}
         with try_slot(slot):
             with cache:
                 if index in sample.structures:
@@ -127,7 +134,7 @@ def register(app):
                     image = Path(temporary) / "overlay.png"
                     output = analysis_jobs.segment_video(sample.video, index, image, config)
                     overlay = image.read_bytes()
-            output["frame"] = {"media_id": str(number), "frame_index": index, "timestamp_ms": evidence["offsetMs"]}
+            output.update(frame=frame, frame_view=body.frame_view)
             job = result(index + 1, analysis_jobs.STRUCTURE_MODEL, "cardiacudc:" + analysis_jobs.CARDIACUDC_SHA256,
                          sample.fingerprint, output)
             with cache:

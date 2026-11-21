@@ -6,7 +6,7 @@
 - 避免解释代码表面行为的注释。能由类型、Lint、导入约束或真实操作测试表达的约定写进对应检查。页面经 `frontend/src/api.ts` 请求数据，由应用入口组合。共享组件放进独立模块。
 - 保留既有哈希路由、已存数据和可用的工作流程。外部响应从 `unknown` 开始校验错误结构。用判别联合表示业务状态，对适用的渲染分支进行穷尽检查。
 - 本机直接进入模式仅在 `127.0.0.1` 运行，使用 `work/local-workstation/` 内的数据库和媒体目录。共享部署采用现有会话与角色检查。
-- 完整公网演示复用本机界面，访客共享独立的可编辑演示工作台。使用专用服务账号和 `ECHO_OPEN_DEMO_ROOT`，只导入获准公开的数据。阶跃星辰复核只处理清单中经 SHA-256 校验的公开视频，并复用同一模型版本的成功结果。
+- 完整公网演示复用本机界面，访客共享独立的可编辑演示工作台。使用专用服务账号和 `ECHO_OPEN_DEMO_ROOT`，只导入获准公开的数据。阶跃星辰复核只处理清单中经 SHA-256 校验的公开视频，并复用同一模型版本的已完成结果。
 - 公开工作台使用逐项获准的四份脱敏档案和五段影像。样例文件不得进入 Git。公开 Stanford 和 CardiacUDC 仅处理发布快照内的视频和帧，独立保存临时结果。其他推理、生产病例和媒体接口采用会话与角色检查。
 - 主线工作站不增加终端、床旁面板或串口依赖。历史固件与验收记录等待独立归档。
 
@@ -33,6 +33,10 @@ npm --prefix frontend test
 `ECHO_VERIFY_PYTHON` 可指向已安装后端依赖的 Python。`scripts/verify.mjs` 用空闲端口启动 Uvicorn 和 Vite，并由 Playwright 验证真实页面。`work/verify/report.json` 记录验收结果和未覆盖项。当前浏览器验收统一使用 `npm --prefix frontend test`。`test_exam_server.py`、`frontend/test-exams.cjs` 和 `frontend/test-patients.cjs` 保留供查阅历史。
 
 按 [浏览器验证视频](fixtures/SOURCES.md) 配置本机 Stanford 权重和公开教学视频后，同一命令会验证真实切面推理、低置信度拒判及刷新读回。每轮保存 1440px 和 1024px 两档辅助诊断页面截图，`report.json` 的 `screenshots` 字段记录路径和窗口尺寸。
+
+`typecheck` 和浏览器验收从实际 FastAPI OpenAPI 生成分析任务类型并与前端文件比较。更新响应模型后，运行 `npm --prefix frontend run generate:analysis-api` 查看新定义。
+
+设置 `ECHO_VERIFY_REVIEW_DB` 为包含阶跃星辰 `indeterminate` 结果的本地历史 SQLite 文件，设置 `ECHO_VERIFY_REVIEW_SAMPLES` 为对应公开样例 SHA-256 清单。后端测试将只读历史任务，再用独立 SQLite 验证真实返回结果的新状态、保存和读回。两个变量都未设置时跳过此测试。
 
 单独核对失败门禁时运行以下命令。两条命令应退出 `1`，在 `work/verify/http-500.json` 和 `work/verify/page-error.json` 分别记录实际 HTTP 500 和未捕获异常。
 
