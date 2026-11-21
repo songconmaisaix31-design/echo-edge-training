@@ -30,6 +30,16 @@ python -m pytest backend -q
 npm --prefix frontend test
 ```
 
+公开文本红线由 GitHub Actions 和 pre-commit 使用同一脚本检查。先安装 `scripts/redline-requirements.txt` 中的依赖。已安装 pre-commit 的环境可以执行 `pre-commit install` 启用提交前检查。
+
+```text
+python -m pip install -r scripts/redline-requirements.txt
+python -X utf8 scripts/check_redlines.py
+python -X utf8 -m unittest discover -s scripts -p test_redlines.py -v
+```
+
+项目指标在 `rules/metrics.json` 按文件和公开表述登记，关联对应 Release 的评估报告。第三方论文结果注明第三方来源，在不同表格或指标列展示。临时例外须限定到原表述并记录理由和到期日。
+
 `ECHO_VERIFY_PYTHON` 可指向已安装后端依赖的 Python。`scripts/verify.mjs` 用空闲端口启动 Uvicorn 和 Vite，并由 Playwright 验证真实页面。`work/verify/report.json` 记录验收结果和未覆盖项。当前浏览器验收统一使用 `npm --prefix frontend test`。`test_exam_server.py`、`frontend/test-exams.cjs` 和 `frontend/test-patients.cjs` 保留供查阅历史。
 
 按 [浏览器验证视频](fixtures/SOURCES.md) 配置本机 Stanford 权重和公开教学视频后，同一命令会验证真实切面推理、低置信度拒判及刷新读回。每轮保存 1440px 和 1024px 两档辅助诊断页面截图，`report.json` 的 `screenshots` 字段记录路径和窗口尺寸。

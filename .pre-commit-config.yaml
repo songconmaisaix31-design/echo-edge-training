@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: redlines
+        name: Check public claims and metric sources
+        entry: python -X utf8 scripts/check_redlines.py
+        language: python
+        additional_dependencies: [markdown-it-py==4.0.0]
+        pass_filenames: false
+        always_run: true

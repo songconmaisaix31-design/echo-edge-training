@@ -26,17 +26,11 @@ EchoFocus 是波士顿儿童医院 Cava Lab 与 CHAI Lab 发布的儿童心超�
 2. **权重以 CUDA tensor 保存**：`torch.load` 不带 `map_location` 会在 CPU 上抛 `RuntimeError: Attempting to deserialize object on a CUDA device`。转存一份 CPU 版即可，数值不变。
 3. **`saveout_*.csv` 的列名和内容相反**：`_evaluate` 把 `run_model_on_dataloader` 的返回值解包成 `y_true, y_pred`，而该函数返回顺序是「模型输出, 真值」。结果 `*_Correct` 列是预测值、`*_Predict` 列是真值。用这个 CSV 算 MAE 不受影响，做阈值或 AUC 分析会出错。另有两处：`evaluate()` 缺 `self.split` 会直接报错，默认 `encoder_depth=0` 的训练路径因 `MultiheadAttention` 调用缺参而不可用。
 
-## 实测：跨域零样本（不是同条件对比）
+## 跨域试运行
 
-用 CAMUS 测试集 30 段视频喂 `EchoFocus_Measure` 的 EF05 头，标签为该数据集的报告 EF：
+本机曾在成人 CAMUS 视频上运行 `EchoFocus_Measure` 的 EF05 头。试运行用于核对视频读取与推理流程，正式跨域比较需要统一评估数据、参考标签和报告来源。
 
-| n = 30 段 | MAE | 偏差 | r | EF<50 AUROC |
-| --- | ---: | ---: | ---: | ---: |
-| EchoFocus_Measure（零样本） | 40.99 | −40.99 | −0.346 | 0.654 |
-
-偏差 −41 表示它对几乎所有输入都输出约 5 % 的 EF（真实均值 46 %）。这是**分布外失效**，不能读作"EchoFocus 不准"：它训练于本院的儿童数据，从未见过成人、另一套机器的图像。此行的意义是划清边界——外部基线不能直接拿来当对照，必须重训或至少重新校准。
-
-**数据口径注意**：本仓库 CAMUS 文档使用的是 Hugging Face `MedOtter/CAMUS`（500 名病人 × 2 切面 × ED/ES 帧）；上述实测使用 `zeahub/camus` 的 HDF5 镜像，该镜像只有 **247 名病人、494 个文件**（每名 2CH + 4CH 各一个）。两者患者集合不同，数字不可直接相加或对比。
+本仓库 CAMUS 文档使用 Hugging Face `MedOtter/CAMUS` 的 ED/ES 帧。试运行使用 `zeahub/camus` 的 HDF5 镜像，评估时须分别记录患者集合及影像来源。
 
 ## 若要作为正式基线
 

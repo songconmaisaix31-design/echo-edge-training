@@ -68,7 +68,7 @@ Models, with the numbers as recorded in this repository's own reports:
 | LV endocardium segmentation<br/>左室分割 | EchoNet-Pediatric fold 0 — 186 patients, 658 videos, 1,298 traced frames<br/>EchoNet-Pediatric 折 0——186 名患儿、658 段视频、1,298 个有描迹帧 | Frame-level Dice 0.9047, IoU 0.8323; per-patient Dice 0.9074.<br/>帧级 Dice 0.9047、IoU 0.8323；按患儿平均 Dice 0.9074。 | [docs/STANFORD_LV_MODEL.md](docs/STANFORD_LV_MODEL.md), release `stanford-lv-epoch8` |
 | Four-chamber segmentation<br/>四腔分割 | CardiacUDC — 293 A4C videos, 2,257 annotated frames, two hospitals<br/>CardiacUDC——293 段 A4C 视频、2,257 张标注帧、两家医院 | Independent test (43 groups / 367 frames): LV 0.8243, LA 0.8279, RA 0.8841, RV 0.8420; foreground mean Dice 0.8446 frame-level, 0.7300 group macro.<br/>独立测试（43 组 / 367 帧）：LV 0.8243、LA 0.8279、RA 0.8841、RV 0.8420；前景平均 Dice 帧级 0.8446、组级 0.7300。 | [docs/CARDIACUDC.md](docs/CARDIACUDC.md), release `cardiacudc-fourchamber-v1` |
 | Structures, quality grade and EF<br/>结构、质量与射血分数 | CAMUS — 500 patients, 2CH/4CH, ED/ES masks, quality grades<br/>CAMUS——500 名病人、2CH/4CH、ED/ES 掩膜、质量分级 | Held-out 50 patients / 200 frames: LV endocardium Dice 0.9275, myocardium 0.8553, left atrium 0.8835, foreground mean 0.8888; image-quality patient-view macro-F1 0.591.<br/>留出 50 名病人 / 200 帧：左室心内膜 Dice 0.9275、心肌 0.8553、左房 0.8835、前景平均 0.8888；影像质量患者-视位 macro-F1 0.591。 | [docs/CAMUS.md](docs/CAMUS.md), release `camus-structure-quality-v1` |
-| EF regression<br/>EF 回归 | EchoNet-Pediatric | Patient-level MAE 3.80; AUROC 0.996 for EF < 50% on 5 positives — direction only, not a screening claim.<br/>患儿级 MAE 3.80；EF < 50% 的 AUROC 0.996 只基于 5 例阳性——只是方向性证据，不是筛查结论。 | [docs/STANFORD_EF.md](docs/STANFORD_EF.md), release `stanford-ef-epoch5` |
+| EF regression<br/>EF 回归 | EchoNet-Pediatric · 151 patients, 271 A4C videos<br/>151 名患儿，271 段 A4C 视频 | Patient-level MAE 3.80 EF percentage points.<br/>按患儿统计的 MAE 为 3.80 个 EF 百分点。 | [EF test report · EF 测试报告](https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/stanford-ef-epoch5/Stanford-EF-test.json) |
 
 These figures are quoted from the reports linked above. This rewrite did not re-run any training or evaluation.
 
@@ -220,12 +220,12 @@ Known limits, stated rather than hidden:
 
 - **No clinical accuracy claim.** Nothing here has been evaluated against clinical ground truth; the models are research artefacts.
 - **Team data is not validated.** Two-dimensional colour Doppler, variable frame intervals, formal annotations and the resulting fine-tune still have to be exercised on real hospital data.
-- **No CI.** The repository has no `.github/workflows`, so there is no CI badge on this page; `pytest` is run by hand. Test counts above are the numbers recorded in the acceptance document, not a run repeated for this rewrite.
+- GitHub Actions checks public claims and their sources. Broader verification commands are in [AGENTS.md](AGENTS.md).
 - **No licence file.** There is no `LICENSE` at the repository root; see below.
 
 - **不做临床准确率声明。** 这里的东西没有和临床真值对照评估过；模型是研究产物。
 - **团队数据没有验证。** 二维彩色多普勒、变帧间隔、正式标注以及由此得到的微调，仍需在真实院方数据上跑过。
-- **没有 CI。** 仓库里没有 `.github/workflows`，所以这页不放 CI 徽章；`pytest` 是手工跑的。上面的测试数字是验收文档里记录的数字，不是这次改写重跑的。
+- GitHub Actions 检查公开表述和来源。完整验证命令见 [AGENTS.md](AGENTS.md)。
 - **没有许可文件。** 仓库根目录没有 `LICENSE`，见下。
 
 ## License · 许可
