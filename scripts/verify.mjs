@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import {randomBytes} from 'node:crypto'
-import {mkdir, mkdtemp, writeFile} from 'node:fs/promises'
-import {join} from 'node:path'
+import {createHash, randomBytes} from 'node:crypto'
+import {mkdir, mkdtemp, readFile, stat, writeFile} from 'node:fs/promises'
+import {basename, join, resolve} from 'node:path'
 import {createWeb, isolatedEnvironment, prepareDatabase, requireFrontend, root, startApi, stopApi} from './workstation-services.mjs'
 
 const {chromium} = requireFrontend('playwright')
@@ -13,13 +13,16 @@ const python = process.env.ECHO_VERIFY_PYTHON || (process.platform === 'win32' ?
 const user = 'verify-operator'
 const password = randomBytes(18).toString('base64url')
 const env = isolatedEnvironment(run, 'verify.db')
+const stanfordVideo = process.env.ECHO_VERIFY_STANFORD_VIDEO
+const stanfordUncovered = '有权重的切面推理和结果读回'
 
 const report = {
   status: 'failed',
   passed: [],
   browserErrors: [],
+  stanfordInference: {status: stanfordVideo ? 'failed' : 'needs_weights'},
   uncovered: [
-    '有权重的切面推理和结果读回',
+    stanfordUncovered,
     '证据不足变体（#29）',
     '患儿查重、列表分页与历史报告导出',
     '验收门禁的 HTTP 500 和页面异常负向用例',
@@ -59,7 +62,78 @@ async function checkPage(page, name) {
   assert.deepEqual(violations, [], `${name} 存在严重的可访问性问题`)
 }
 
-async function checkWorkstation(origin) {
+async function configureStanford(video) {
+  const files = {}
+  for (const name of ['ECHO_INFERENCE_PYTHON', 'ECHO_ENGINE_REPORT', 'ECHO_STANFORD_CHECKPOINT']) {
+    assert.ok(process.env[name], `执行真实切面验收需要配置 ${name}。`)
+    const path = resolve(root, process.env[name])
+    assert.ok((await stat(path)).isFile(), `${name} 须指向已有文件。`)
+    files[name] = path
+  }
+  const fixturePath = resolve(root, video)
+  assert.ok((await stat(fixturePath)).isFile(), 'ECHO_VERIFY_STANFORD_VIDEO 须指向已登记的视频文件。')
+  const inputSha256 = createHash('sha256').update(await readFile(fixturePath)).digest('hex')
+  const release = JSON.parse((await readFile(files.ECHO_ENGINE_REPORT, 'utf8')).replace(/^\uFEFF/, ''))
+  assert.match(release.checkpoint_sha256, /^[a-f0-9]{64}$/)
+  Object.assign(env, files, {ECHO_INFERENCE_SCRIPT: join(root, 'infer_stanford.py')})
+  return {fixturePath, inputSha256, modelVersion: `fp32:${release.checkpoint_sha256}`}
+}
+
+async function checkViewResult(page, output) {
+  await page.getByText('分析状态：成功', {exact: true}).waitFor()
+  const result = page.getByRole('status').filter({hasText: 'AI 切面结论'})
+  const viewNames = {A4C: '心尖四腔心切面', PSAX: '胸骨旁短轴切面'}
+  const summary = output.view === null
+    ? '模型未达到判定阈值，暂无法确认这段视频的切面。'
+    : `模型判断这段视频更符合${viewNames[output.view]}。`
+  await result.getByText(summary, {exact: true}).waitFor()
+  await result.getByText('查看模型详情', {exact: true}).click()
+  const a4c = (output.probabilities.A4C * 100).toFixed(1)
+  const psax = (output.probabilities.PSAX * 100).toFixed(1)
+  await result.getByText(`抽样 ${output.sampled_frames} 帧 · A4C ${a4c}% · PSAX ${psax}%`, {exact: true}).waitFor()
+}
+
+async function checkStanfordInference(page, origin, examId, media, stanford) {
+  const historyUrl = `${origin}/api/v1/media/${media.id}/analysis-jobs`
+  await page.getByText('分析状态：暂无记录', {exact: true}).waitFor()
+  const [response] = await Promise.all([
+    page.waitForResponse(item => item.url() === historyUrl && item.request().method() === 'POST', {timeout: 200_000}),
+    page.getByRole('button', {name: '执行切面识别', exact: true}).click(),
+  ])
+  assert.equal(response.status(), 201)
+  const job = await response.json()
+  assert.equal(job.state, 'succeeded', job.error || '切面推理未成功')
+  assert.equal(job.error, null)
+  assert.equal(job.model_type, 'stanford_view')
+  assert.equal(job.model_version, stanford.modelVersion)
+  assert.equal(job.input_sha256, stanford.inputSha256)
+  assert.equal(job.exam_id, Number(examId))
+  assert.equal(job.media_id, media.id)
+  assert.ok(Number.isInteger(job.id) && job.id > 0)
+  assert.ok(job.completed)
+  const {output} = job
+  assert.equal(output.precision, 'fp32')
+  assert.ok([null, 'A4C', 'PSAX'].includes(output.view))
+  assert.ok(Number.isInteger(output.sampled_frames) && output.sampled_frames > 0 && output.sampled_frames <= media.frameCount)
+  await checkViewResult(page, output)
+
+  const [readback] = await Promise.all([
+    page.waitForResponse(item => item.url() === historyUrl && item.request().method() === 'GET'),
+    page.reload(),
+  ])
+  assert.equal(readback.status(), 200)
+  assert.deepEqual(await readback.json(), [job])
+  await checkViewResult(page, output)
+
+  report.stanfordInference = {
+    status: 'passed', jobId: job.id, modelVersion: job.model_version, inputSha256: job.input_sha256,
+    precision: output.precision, view: output.view, sampledFrames: output.sampled_frames,
+  }
+  report.uncovered = report.uncovered.filter(item => item !== stanfordUncovered)
+  report.passed.push('Stanford 真实切面推理，重新加载页面后从分析历史读回同一任务和结果')
+}
+
+async function checkWorkstation(origin, stanford) {
   browser = await chromium.launch({headless: true})
   const page = await browser.newPage({baseURL: origin, viewport: {width: 1440, height: 960}})
   const visit = hash => page.goto(`${origin}/#${hash}`)
@@ -75,7 +149,7 @@ async function checkWorkstation(origin) {
   const capabilities = await page.request.get('/api/v1/capabilities')
   assert.equal(capabilities.status(), 200)
   const features = await capabilities.json()
-  assert.equal(features.model, 'unavailable')
+  assert.equal(features.model, stanford ? 'Stanford 切面模型' : 'unavailable')
   assert.equal(features.reviewConfigured, false)
   assert.equal(features.structureConfigured, false)
   report.passed.push('未登录访问被拒绝，外部复核关闭')
@@ -114,11 +188,12 @@ async function checkWorkstation(origin) {
   await button('导入影像').click()
   await heading('导入影像').waitFor()
   const uploadSelector = 'input[type=file]'
+  const uploadFile = stanford?.fixturePath ?? fixture
   await page.waitForFunction(selector => document.querySelector(selector)?.disabled === false, uploadSelector)
   const [uploadResponse] = await Promise.all([
     page.waitForResponse(response => response.url() === `${origin}/api/v1/media`
       && response.request().method() === 'POST'),
-    page.locator(uploadSelector).setInputFiles(fixture),
+    page.locator(uploadSelector).setInputFiles(uploadFile),
   ])
   assert.equal(uploadResponse.status(), 201)
   const media = await uploadResponse.json()
@@ -138,8 +213,10 @@ async function checkWorkstation(origin) {
   await page.getByRole('img', {name: '源帧 1', exact: true}).waitFor()
   const persisted = await page.request.get(`/api/v1/media/${media.id}`)
   assert.equal(persisted.status(), 200)
-  assert.equal((await persisted.json()).originalName, 'flower.mp4')
-  report.passed.push('上传公开非患者视频、解码、逐帧、播放及刷新读回')
+  assert.equal((await persisted.json()).originalName, basename(uploadFile))
+  report.passed.push(stanford
+    ? '上传公开教学视频、解码、逐帧、播放及刷新读回'
+    : '上传公开非患者视频、解码、逐帧、播放及刷新读回')
 
   const patientId = patientUrl.split('/').at(-1)
   const examId = examUrl.split('/').at(-1)
@@ -152,7 +229,7 @@ async function checkWorkstation(origin) {
   assert.notEqual(otherExamId, examId)
   await visit(`diagnosis/${examId}`)
   await button('执行切面识别').waitFor()
-  assert.equal(await button('执行切面识别').isDisabled(), true)
+  if (!stanford) assert.equal(await button('执行切面识别').isDisabled(), true)
   assert.equal(await page.getByRole('button', {name: /发送.*终端/}).count(), 0)
   const examPicker = page.getByRole('combobox', {name: /^选择检查/})
   await examPicker.selectOption(otherExamId)
@@ -161,10 +238,13 @@ async function checkWorkstation(origin) {
   await examPicker.selectOption(examId)
   await button('执行切面识别').waitFor()
   report.passed.push('切换检查后只显示当前检查的影像和分析入口')
+  if (stanford) await checkStanfordInference(page, origin, examId, media, stanford)
   await checkPage(page, '辅助诊断（1440px）')
   await page.setViewportSize({width: 1024, height: 768})
   await checkPage(page, '辅助诊断（1024px）')
-  report.passed.push('未配置模型时禁用运行；两种窗口宽度通过可访问性检查')
+  report.passed.push(stanford
+    ? '两种窗口宽度通过可访问性检查'
+    : '未配置模型时禁用运行；两种窗口宽度通过可访问性检查')
 
   const patientReload = page.waitForRequest(request => request.url() === `${origin}/api/v1/patients/${patientId}`)
   await page.goto(patientUrl)
@@ -222,13 +302,14 @@ async function checkLocalEntry(origin) {
 }
 
 try {
+  const stanford = stanfordVideo ? await configureStanford(stanfordVideo) : null
   const operator = {name: user, password}
   await prepareDatabase(python, env, operator)
   const service = startApi(python, env, data => { apiLog += data })
   api = service.child
   const target = await service.ready
   web = await createWeb({target, port: 0, cacheDir: join(run, 'shared-vite')})
-  await checkWorkstation(await webOrigin(web))
+  await checkWorkstation(await webOrigin(web), stanford)
   localWeb = await createWeb({target, port: 0, cacheDir: join(run, 'local-vite'), operator})
   await checkLocalEntry(await webOrigin(localWeb))
   report.status = 'passed'
