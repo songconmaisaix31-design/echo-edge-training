@@ -5,6 +5,7 @@ import {api,apiUpload,apiUrl,errorMessage} from './api'
 import {structureEvidenceHref} from './diagnosis-contract'
 import StructureEvidence from './StructureEvidence'
 import MedicalReview from './MedicalReview'
+import MultiviewAssessment from './MultiviewAssessment'
 import {useCapabilities} from './use-capabilities'
 import {Player,ViewAnalysis} from './MediaAnalysis'
 type Row={id:number;name?:string;birth?:string;sex?:string;notes?:string;history?:string;treatment_history?:string;title?:string;status?:string;patient_id?:number;created?:string;kind?:string;reason?:string;role?:string;author?:string;text?:string;state?:string;snapshot?:{name:string;birth:string}}
@@ -80,7 +81,10 @@ export default function Modules({page,role}:{page:string;role:string}){
      active&&hasExam?<MedicalReview key={active+'-'+tab} id={active} examId={caseId} kind={tab==='影像质量'?'quality':'findings'} capabilities={capabilities} statusFailed={modelStatus==='disconnected'}/>:<p>请选择正式检查中已导入的影像。</p>}
    </section>}
   </div>
-  {page==='multi'&&<section className="queue padded"><h2>对照影像</h2><select value={compare} onChange={e=>setCompare(e.target.value)}><option value="">选择第二段影像</option>{media.map((id,i)=><option key={id} value={id}>影像 {i+1}</option>)}</select>{active&&compare&&<div className="business-columns"><Player key={'a'+active} id={active}/><Player key={'b'+compare} id={compare}/></div>}<p>资料覆盖情况由医生记录。此页面不生成临床完整性评分。</p></section>}
+  {page==='multi'&&<>
+   {hasExam&&<MultiviewAssessment key={caseId} examId={caseId} media={media} refresh={capabilityRevision}/>}
+   <section className="queue padded"><h2>对照影像</h2><select aria-label="选择第二段影像" value={compare} onChange={e=>setCompare(e.target.value)}><option value="">选择第二段影像</option>{media.map((id,i)=><option key={id} value={id}>影像 {i+1}</option>)}</select>{active&&compare&&<div className="business-columns"><Player key={'a'+active} id={active}/><Player key={'b'+compare} id={compare}/></div>}</section>
+  </>}
  </>}
  {(page==='experts'||page==='reports')&&current&&<ReviewWorkflow key={caseId+current.status} exam={caseId} status={current.status||''} role={role} page={page} consultation={entries.find(r=>r.kind==='consultation')?.state} onChange={load}/>}
  {(isWork||page==='experts'||page==='reports'||page==='multi')&&<section className="queue padded"><h2>{isWork?'医生人工审核':page==='experts'?'专家复核申请与反馈':page==='reports'?'检查报告编辑':'检查资料整理'}</h2>{page==='reports'&&<p>保存为研究报告版本。切面识别结果不会自动纳入报告。</p>}<form className="business-form" onSubmit={e=>{e.preventDefault();const form=e.currentTarget;void run(()=>saveEntry(isWork?'review':page==='experts'?'consultation':page==='reports'?'report':'organization',form))}}><label>{page==='experts'?'申请问题 / 专家意见':'记录内容'}<textarea name="text" required maxLength={12000} placeholder={isWork?'记录人工判断、无法判断的内容和复核备注':''}/></label>{page==='experts'&&<label>协作操作<select name="state"><option value="submitted">提交 / 重新提交申请</option>{role!=='operator'&&<><option value="feedback">专家反馈</option><option value="needs_more">要求补充资料</option></>}<option value="closed">关闭协作</option></select></label>}<Button disabled={busy}>保存记录</Button></form>{page==='reports'&&<Button variant="outline" asChild><a href={apiUrl('/cases/'+caseId+'/report-export')}>导出检查记录 TXT</a></Button>}<h3>历史记录与预览</h3>{entries.filter(r=>r.kind===(isWork?'review':page==='experts'?'consultation':page==='reports'?'report':'organization')).map(r=><article className="record" key={r.id}><b>{r.author} · {r.created} · {r.state}</b><p className="preserve">{r.text}</p></article>)}</section>}

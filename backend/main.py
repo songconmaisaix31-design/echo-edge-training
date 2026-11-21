@@ -207,6 +207,9 @@ exam_parameters.register(app)
 import analysis_jobs
 analysis_jobs.register(app, media_folder)
 
+import multiview
+multiview.register(app, media_folder)
+
 import public_samples
 public_samples.register(app)
 

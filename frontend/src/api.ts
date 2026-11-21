@@ -1,5 +1,7 @@
 import type {InsufficientEvidence} from './analysis-api.generated'
 import type {AnalysisJob} from './diagnosis-contract'
+import type {AssessmentResponse, Finding, FrameEvidence} from './multiview-api.generated'
+import {isView,type AssessmentInput} from './multiview-contract'
 
 export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;reviewConfigured?:boolean;reviewModel?:string|null;reviewDetail?:string;reviewSampleOnly?:boolean;reviewMaxFrames?:number|null}
 
@@ -124,6 +126,46 @@ export async function analysisHistory<T>(path:string,modelType:string,isOutput:(
 
 export async function submitAnalysis<T>(path:string,body:unknown,isOutput:(output:unknown)=>output is T):Promise<AnalysisJob<T>>{
  return parseAnalysisJob(await api<unknown>(path,body),isOutput)
+}
+
+function isAssessmentFrame(value:unknown):value is FrameEvidence{
+ return isRecord(value)&&isView(value.view)&&typeof value.media_id==='string'&&
+  typeof value.frame_index==='number'&&typeof value.timestamp_ms==='number'
+}
+
+function everyItem<T>(value:unknown,check:(item:unknown)=>item is T):value is T[]{
+ return Array.isArray(value)&&value.every(check)
+}
+
+function isCoverage(value:unknown):value is AssessmentResponse['coverage'][number]{
+ return isRecord(value)&&isView(value.view)&&(value.status==='covered'||value.status==='missing')
+}
+
+function isFinding(value:unknown):value is Finding{
+ return isRecord(value)&&typeof value.analysis_job_id==='number'&&typeof value.observation_number==='number'&&
+  everyItem(value.evidence_frames,isAssessmentFrame)&&value.evidence_frames.length>0&&everyItem(value.missing_views,isView)
+}
+
+export async function requestAssessment(examId:string,input?:AssessmentInput):Promise<AssessmentResponse>{
+ const value=await api<unknown>('/examinations/'+examId+'/multiview',input,'PUT')
+ if(!isRecord(value)||value.exam_id!==Number(examId)||typeof value.revision!=='number'||typeof value.editable!=='boolean'||
+    !everyItem(value.required_views,isView)||!everyItem(value.frames,isAssessmentFrame)||
+    !everyItem(value.coverage,isCoverage))
+  throw new Error(INVALID_RESPONSE)
+ const {exam_id,revision,editable,required_views,frames,coverage,state}=value
+ const fields={exam_id,revision,editable,required_views,frames,coverage}
+ if(state==='insufficient_evidence'&&isInsufficientEvidence(value.insufficient_evidence)){
+  return {...fields,state,insufficient_evidence:value.insufficient_evidence}
+ }
+ if(state==='succeeded'&&everyItem(value.findings,isFinding))return {...fields,state,findings:value.findings}
+ throw new Error(INVALID_RESPONSE)
+}
+
+export async function getFrameOptions(mediaId:string):Promise<{index:number;offsetMs:number}[]>{
+ const value=await api<unknown>(mediaApiPath(mediaId,'private'))
+ if(!isRecord(value)||!Array.isArray(value.frames)||!value.frames.every((frame:unknown)=>
+  isRecord(frame)&&typeof frame.index==='number'&&typeof frame.offsetMs==='number'))throw new Error(INVALID_RESPONSE)
+ return value.frames
 }
 
 export function apiUpload<T=unknown>(path:string,form:FormData):Promise<T>{

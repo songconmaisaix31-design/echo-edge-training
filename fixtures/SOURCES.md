@@ -29,3 +29,7 @@ npm --prefix frontend test
 ## 四腔分割的非 A4C 帧验收
 
 四腔分割采用操作员对所选帧提交的切面确认。使用花卉视频时验收会选中具体帧，确认该帧为非 A4C 并检查证据不足的原因、补充影像入口、刷新读回和无叠图。也可在未配置 `ECHO_VERIFY_STANFORD_VIDEO` 的一轮验收中，将 `ECHO_VERIFY_NON_A4C_VIDEO` 指向本机保存的教学视频 S1，期刊标注为胸骨旁长轴切面。验收核对文件的 SHA-256 为 `dddbf2def6a7923c1348fc2ccdb398e08b3a2e414d6ea86e1515349ababe9bff`。[期刊文章](https://pocusjournal.com/article/2021-06-01p10-12/) · [原始视频 S1](https://pocusjournal.com/wp-content/uploads/2021/04/Damji-et-al-Video-S1-PSLX-1.mp4)
+
+## 多切面评估验收
+
+默认验收会设置本次检查的必要切面，核对缺少确认帧时的 `insufficient_evidence`、补充影像入口、刷新读回和检查隔离。将 `ECHO_VERIFY_MULTIVIEW_DIR` 指向本机保存原始 S3 和 S1 的目录后，验收还会核对上述 SHA-256，从页面上传两段视频并确认源帧。先只确认 S3 的 A4C，再确认 S1 的 PLAX，核对已确认帧、缺少切面、覆盖补齐和刷新读回。两种切面由验收流程为本次研究检查选择。

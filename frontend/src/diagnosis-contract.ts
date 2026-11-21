@@ -48,16 +48,10 @@ export type DiagnosticEvidence = {
   view?: string
   stance: 'supporting' | 'contradicting' | 'missing'
 }
-export type DiseaseCandidate = {
-  label: string
-  scope: string
-  evidenceIds: string[]
-}
 type Output =
   | { kind: 'structure'; structures: { label: string; frame: EvidenceFrame; maskRef?: string }[] }
   | { kind: 'finding'; evidence: DiagnosticEvidence[] }
   | { kind: 'multi_view'; evidence: DiagnosticEvidence[] }
-  | { kind: 'disease_candidate'; candidates: DiseaseCandidate[]; evidence: DiagnosticEvidence[] }
 
 export type DiagnosisModelResult = {
   schemaVersion: '1.0'

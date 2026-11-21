@@ -6,6 +6,7 @@ import {compile} from 'json-schema-to-typescript'
 
 const backend = fileURLToPath(new URL('../../backend/', import.meta.url))
 const destination = new URL('../src/analysis-api.generated.ts', import.meta.url)
+const multiviewDestination = new URL('../src/multiview-api.generated.ts', import.meta.url)
 const json = 'application/json'
 const media = '/api/v1/media/{identifier}'
 
@@ -40,17 +41,33 @@ async function generate(python) {
   const structureRequest = document.paths[media + '/structure-jobs'].post.requestBody.content[json].schema
   assert.equal(structureRequest.$ref, '#/components/schemas/StructureInput', '四腔分割请求类型已更改')
   const structure = await compile(components.StructureInput, 'StructureInput', options)
-  return '// 由 FastAPI OpenAPI 生成。\n\n' + jobs + '\n' + structure
+  const multiview = document.paths['/api/v1/examinations/{key}/multiview']
+  const assessment = multiview.get.responses[200].content[json].schema
+  const saved = multiview.put.responses[200].content[json].schema
+  assert.deepEqual(assessment.oneOf, saved.oneOf, '多切面读取和保存的响应类型不一致')
+  assert.deepEqual(assessment.discriminator, saved.discriminator, '多切面读取和保存的判别字段不一致')
+  const assessmentSchemas = Object.fromEntries([
+    'AssessmentInsufficient', 'AssessmentSucceeded', 'Coverage', 'Finding', 'FrameEvidence', 'InsufficientEvidence',
+  ].map(name => [name, components[name]]))
+  const assessmentTypes = await compile({...assessment, title: 'AssessmentResponse', components: {schemas: assessmentSchemas}},
+    'AssessmentResponse', options)
+  const banner = '// 由 FastAPI OpenAPI 生成。\n\n'
+  return {analysis: banner + jobs + '\n' + structure, assessment: banner + assessmentTypes}
 }
 
 export async function checkAnalysisContract(python) {
   const generated = await generate(python)
-  assert.ok((await readFile(destination, 'utf8')).replaceAll('\r\n', '\n') === generated,
+  assert.ok((await readFile(destination, 'utf8')).replaceAll('\r\n', '\n') === generated.analysis,
     '分析任务的 TypeScript 类型与 OpenAPI 不一致。运行 npm --prefix frontend run generate:analysis-api 查看新定义。')
+  assert.ok((await readFile(multiviewDestination, 'utf8')).replaceAll('\r\n', '\n') === generated.assessment,
+    '多切面评估的 TypeScript 类型与 OpenAPI 不一致。运行 npm --prefix frontend run generate:analysis-api -- multiview 查看新定义。')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const python = process.env.ECHO_VERIFY_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
-  if (process.argv[2] === '--print') process.stdout.write(await generate(python))
+  if (process.argv[2] === '--print') {
+    const generated = await generate(python)
+    process.stdout.write(process.argv[3] === 'multiview' ? generated.assessment : generated.analysis)
+  }
   else await checkAnalysisContract(python)
 }
