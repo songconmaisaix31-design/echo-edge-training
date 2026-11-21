@@ -61,11 +61,15 @@ def test_approved_review_indeterminate():
         assert failure is None and result["error"] is None
         assert contract.validate_python(result).state == "insufficient_evidence"
         assert result["insufficient_evidence"] == legacy["insufficient_evidence"]
+        assert result["output"] == legacy["output"]
+        assert result["output"]["assessment"] == "indeterminate"
+        assert result["output"]["sampled_frames"] == output["sampled_frames"]
+        assert not {"summary", "observations", "limitations", "recommendations"}.intersection(result["output"])
         with db.Session() as session:
             stored = session.get(AnalysisJob, result["id"])
             assert stored.state == "insufficient_evidence"
+            assert json.loads(stored.output) == output
             assert serialize(stored) == result
-        assert result["output"] == output
     finally:
         db.Session.configure(bind=original_bind)
         engine.dispose()

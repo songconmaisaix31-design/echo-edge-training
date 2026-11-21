@@ -88,5 +88,9 @@ def job_result(model_type, state, output):
     # 旧记录在读回时按同一规则解释，无需改写已有结果。
     shortfall = evidence_shortfall(model_type, output) if output is not None else None
     if shortfall is not None:
+        if model_type in ("llm_quality", "llm_findings"):
+            fields = ("kind", "assessment", "sampled_frames", "source_frame_count", "duration_ms",
+                      "model", "prompt_version", "requires_clinician_review")
+            output = {field: output[field] for field in fields if field in output}
         return {"state": INSUFFICIENT, "insufficient_evidence": shortfall.model_dump(), "output": output}
     return {"state": state, "output": output}
