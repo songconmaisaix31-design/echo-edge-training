@@ -105,13 +105,13 @@ export default function Diagnosis({route}:{route:string}){
       <article className="diagnosis-card">
        <div className="diagnosis-toolbar"><h2>切面识别</h2><span className="state">阅片参考</span></div>
        <p>对当前选中的影像进行切面分类。此结果不用于判断是否患病。</p>
-       {active?<ViewAnalysis key={active} id={active} available={viewReady} detail={capError?'无法读取模型状态。':cap?(viewReady?cap.modelDetail||'Stanford 切面模型可用。':'切面模型未接入。'):'正在读取模型状态…'}/>:<p>选择关联影像后可执行切面识别。</p>}
+       {active?<ViewAnalysis key={active} id={active} examId={examId} available={viewReady} detail={capError?'无法读取模型状态。':cap?(viewReady?cap.modelDetail||'Stanford 切面模型可用。':'切面模型未接入。'):'正在读取模型状态…'}/>:<p>选择关联影像后可执行切面识别。</p>}
       </article>
-      {active&&<MedicalReview key={active+'-quality'} id={active} kind="quality" capabilities={cap} statusFailed={capError}/>}
+      {active&&<MedicalReview key={active+'-quality'} id={active} examId={examId} kind="quality" capabilities={cap} statusFailed={capError}/>}
      </>:section==='诊断证据'?<>
      {active&&capError&&<p role="alert">无法读取四腔分割模型状态。</p>}
-     {active&&<StructureEvidence key={active} id={active} configured={cap?.structureConfigured??null}/>}
-     {active?<MedicalReview key={active+'-findings'} id={active} kind="findings" capabilities={cap} statusFailed={capError}/>:<p>请选择正式检查中已导入的影像。</p>}
+     {active&&<StructureEvidence key={active} id={active} examId={examId} configured={cap?.structureConfigured??null}/>}
+     {active?<MedicalReview key={active+'-findings'} id={active} examId={examId} kind="findings" capabilities={cap} statusFailed={capError}/>:<p>请选择正式检查中已导入的影像。</p>}
      </>:section==='鉴别与复核'?<article className="diagnosis-card">
       <h2>鉴别诊断与复核提示</h2><p>尚未接入经过临床审核的知识规则。当前不生成鉴别诊断或医学复核建议。</p>
      </article>:<article className="diagnosis-card">

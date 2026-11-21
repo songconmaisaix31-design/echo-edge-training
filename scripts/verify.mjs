@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {createHash, randomBytes} from 'node:crypto'
 import {mkdir, mkdtemp, readFile, stat, writeFile} from 'node:fs/promises'
 import {basename, join, relative, resolve} from 'node:path'
+import {checkAnalysisContract} from '../frontend/scripts/check-analysis-contract.mjs'
 import {createWeb, isolatedEnvironment, prepareDatabase, requireFrontend, root, startApi, stopApi} from './workstation-services.mjs'
 
 const {chromium} = requireFrontend('playwright')
@@ -14,6 +15,8 @@ const user = 'verify-operator'
 const password = randomBytes(18).toString('base64url')
 const env = isolatedEnvironment(run, 'verify.db')
 const stanfordVideo = process.env.ECHO_VERIFY_STANFORD_VIDEO
+const nonA4CVideo = process.env.ECHO_VERIFY_NON_A4C_VIDEO
+const plaxSha256 = 'dddbf2def6a7923c1348fc2ccdb398e08b3a2e414d6ea86e1515349ababe9bff'
 const stanfordUncovered = '有权重的切面推理和结果读回'
 const insufficientUncovered = '切面置信度不足与结果读回'
 const screenshotsUncovered = '1440px 和 1024px 截图'
@@ -91,17 +94,28 @@ async function configureStanford(video) {
   return {fixturePath, inputSha256, modelVersion: `fp32:${checkpoint_sha256}`, runtime, runtimePath}
 }
 
-async function checkViewResult(page, output) {
-  await page.getByText('分析状态：成功', {exact: true}).waitFor()
-  const result = page.getByRole('status').filter({hasText: output.view === null ? '证据不足' : 'AI 切面结论'})
+async function checkInsufficientNotice(panel, evidence) {
+  const result = panel.getByRole('status').filter({hasText: evidence.message})
+  await result.getByText('证据不足', {exact: true}).waitFor()
+  await result.getByText(evidence.message, {exact: true}).waitFor()
+  await result.getByText(evidence.next_step, {exact: true}).waitFor()
+  await result.getByRole('link', {name: '补充影像', exact: true}).waitFor()
+  return result
+}
+
+async function checkViewResult(page, job) {
+  const {state, output, insufficient_evidence: evidence} = job
+  const insufficient = state === 'insufficient_evidence'
+  await page.getByText(insufficient ? '分析状态：证据不足' : '分析状态：成功', {exact: true}).waitFor()
+  const result = insufficient ? await checkInsufficientNotice(page, evidence) : page.getByRole('status').filter({hasText: 'AI 切面结论'})
   const viewNames = {A4C: '心尖四腔心切面', PSAX: '胸骨旁短轴切面'}
-  const summary = output.view === null
-    ? '模型未达到判定阈值，暂无法确认这段视频的切面。'
-    : `模型判断这段视频更符合${viewNames[output.view]}。`
-  await result.getByText(summary, {exact: true}).waitFor()
-  if (output.view === null) {
-    await result.getByText('请复核当前影像，或补采所需切面后重试。', {exact: true}).waitFor()
+  if (insufficient) {
+    assert.equal(evidence.reason, 'quality')
     assert.doesNotMatch(await result.innerText(), /模型判断这段视频更符合/)
+    assert.equal(await page.getByText('AI 切面结论', {exact: true}).count(), 0)
+  } else {
+    assert.equal(Object.hasOwn(job, 'insufficient_evidence'), false)
+    await result.getByText(`模型判断这段视频更符合${viewNames[output.view]}。`, {exact: true}).waitFor()
   }
   if (await result.locator('details[open]').count() === 0) {
     await result.getByText('查看模型详情', {exact: true}).click()
@@ -120,7 +134,7 @@ async function runStanfordInference(page, origin, examId, media, stanford, previ
   ])
   assert.equal(response.status(), 201)
   const job = await response.json()
-  assert.equal(job.state, 'succeeded', job.error || '切面推理未成功')
+  assert.equal(job.state, previousJobs.length ? 'insufficient_evidence' : 'succeeded', job.error || '切面推理状态不符')
   assert.equal(job.error, null)
   assert.equal(job.model_type, 'stanford_view')
   assert.equal(job.model_version, stanford.modelVersion)
@@ -133,7 +147,7 @@ async function runStanfordInference(page, origin, examId, media, stanford, previ
   assert.equal(output.precision, 'fp32')
   assert.ok([null, 'A4C', 'PSAX'].includes(output.view))
   assert.ok(Number.isInteger(output.sampled_frames) && output.sampled_frames > 0 && output.sampled_frames <= media.frameCount)
-  await checkViewResult(page, output)
+  await checkViewResult(page, job)
 
   const [readback] = await Promise.all([
     page.waitForResponse(item => item.url() === historyUrl && item.request().method() === 'GET'),
@@ -141,7 +155,7 @@ async function runStanfordInference(page, origin, examId, media, stanford, previ
   ])
   assert.equal(readback.status(), 200)
   assert.deepEqual(await readback.json(), [job, ...previousJobs])
-  await checkViewResult(page, output)
+  await checkViewResult(page, job)
   return job
 }
 
@@ -164,12 +178,56 @@ async function checkStanfordInference(page, origin, examId, media, stanford) {
     assert.equal(abstained.output.view, null, '置信度不足时应拒绝判定切面')
     const confidence = Math.max(...Object.values(abstained.output.probabilities))
     assert.ok(confidence < threshold)
-    report.insufficientEvidence = {status: 'passed', jobId: abstained.id, view: null, threshold, confidence}
+    report.insufficientEvidence = {status: 'passed', jobId: abstained.id, state: abstained.state, reason: abstained.insufficient_evidence.reason, view: null, threshold, confidence}
     report.uncovered = report.uncovered.filter(item => item !== insufficientUncovered)
     report.passed.push('切面置信度低于隔离验收阈值，页面显示证据不足及复核建议，刷新读回同一结果')
   } finally {
     await writeFile(runtimePath, JSON.stringify(runtime), 'utf8')
   }
+}
+
+async function checkNonA4CFrame(page, origin, examId, media, inputSha256) {
+  await page.goto(`${origin}/#diagnosis/${examId}/structure/${media.id}`)
+  const panel = page.getByRole('tabpanel')
+  const frame = panel.getByLabel('选择证据帧')
+  const frameView = panel.getByLabel('所选帧切面')
+  await frameView.selectOption('A4C')
+  await frame.selectOption('1')
+  assert.equal(await frameView.inputValue(), 'unconfirmed')
+  await panel.getByRole('img', {name: '所选证据帧 2', exact: true}).waitFor()
+  const mediaUrl = `${origin}/api/v1/media/${media.id}`
+  let job
+  for (const [view, reason] of [['unconfirmed', 'coverage'], ['non_a4c', 'out_of_scope']]) {
+    await frameView.selectOption(view)
+    const [response] = await Promise.all([
+      page.waitForResponse(item => item.url() === mediaUrl + '/structure-jobs' && item.request().method() === 'POST'),
+      panel.getByRole('button', {name: '运行四腔分割', exact: true}).click(),
+    ])
+    assert.equal(response.status(), 201)
+    job = await response.json()
+    assert.equal(job.state, 'insufficient_evidence')
+    assert.equal(job.error, null)
+    assert.equal(job.insufficient_evidence.reason, reason)
+    assert.equal(job.input_sha256, inputSha256)
+    assert.equal(job.output.frame_view, view)
+    assert.deepEqual(job.evidence_frames, [{media_id: media.id, frame_index: 1, timestamp_ms: media.frames[1].offsetMs}])
+    await checkInsufficientNotice(panel, job.insufficient_evidence)
+    assert.equal(await panel.getByRole('heading', {name: '四腔结构叠图'}).count(), 0)
+    assert.equal((await page.request.get('/api/v1/analysis-jobs/' + job.id + '/overlay')).status(), 404)
+  }
+  const [readback] = await Promise.all([
+    page.waitForResponse(item => item.url() === mediaUrl + '/analysis-jobs' && item.request().method() === 'GET'),
+    page.reload(),
+  ])
+  assert.equal(readback.status(), 200)
+  assert.deepEqual((await readback.json())[0], job)
+  assert.deepEqual(await (await page.request.get('/api/v1/analysis-jobs/' + job.id)).json(), job)
+  await checkInsufficientNotice(panel, job.insufficient_evidence)
+  assert.equal(await frame.inputValue(), '1')
+  assert.equal(await frameView.inputValue(), 'non_a4c')
+  await checkPage(page, '非 A4C 帧的分割证据不足')
+  report.nonA4CFrame = {jobId: job.id, state: job.state, reason: job.insufficient_evidence.reason, frameIndex: 1, inputSha256}
+  report.passed.push('真实非 A4C 帧提交后返回适用范围不足，无叠图，刷新后读回同一帧及结果')
 }
 
 async function checkDiagnosisScreenshots(page, stanford) {
@@ -381,7 +439,9 @@ async function checkWorkstation(origin, stanford) {
   await button('导入影像').click()
   await heading('导入影像').waitFor()
   const uploadSelector = 'input[type=file]'
-  const uploadFile = stanford?.fixturePath ?? fixture
+  const uploadFile = stanford?.fixturePath ?? (nonA4CVideo ? resolve(root, nonA4CVideo) : fixture)
+  const inputSha256 = createHash('sha256').update(await readFile(uploadFile)).digest('hex')
+  if (!stanford && nonA4CVideo) assert.equal(inputSha256, plaxSha256, '非 A4C 验收须使用登记的 S1 视频')
   await page.waitForFunction(selector => document.querySelector(selector)?.disabled === false, uploadSelector)
   const [uploadResponse] = await Promise.all([
     page.waitForResponse(response => response.url() === `${origin}/api/v1/media`
@@ -409,7 +469,7 @@ async function checkWorkstation(origin, stanford) {
   assert.equal((await persisted.json()).originalName, basename(uploadFile))
   report.passed.push(stanford
     ? '上传公开教学视频、解码、逐帧、播放及刷新读回'
-    : '上传公开非患者视频、解码、逐帧、播放及刷新读回')
+    : '上传已登记的公开视频，解码、逐帧、播放及刷新读回')
 
   const patientId = patientUrl.split('/').at(-1)
   const examId = examUrl.split('/').at(-1)
@@ -434,6 +494,7 @@ async function checkWorkstation(origin, stanford) {
   report.passed.push('切换检查后只显示当前检查的影像和分析入口')
   if (stanford) await checkStanfordInference(page, origin, examId, media, stanford)
   await checkDiagnosisScreenshots(page, stanford)
+  if (!stanford) await checkNonA4CFrame(page, origin, examId, media, inputSha256)
 
   const patientReload = page.waitForRequest(request => request.url() === `${origin}/api/v1/patients/${patientId}`)
   await page.goto(patientUrl)
@@ -495,6 +556,7 @@ async function checkLocalEntry(origin) {
 
 try {
   assert.ok(extraArgs.length === 0 && (!fault || faultModes.includes(fault)), '验收参数无效')
+  await checkAnalysisContract(python)
   const stanford = stanfordVideo ? await configureStanford(stanfordVideo) : null
   const operator = {name: user, password}
   await prepareDatabase(python, env, operator)

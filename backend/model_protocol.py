@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Callable, Literal, TypedDict
 
 ModelType = Literal["view_classification", "cardiac_structure", "abnormality_detection"]
-TaskState = Literal["pending", "running", "succeeded", "failed", "interrupted"]
 
 
 class EvidenceFrame(TypedDict):

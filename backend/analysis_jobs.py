@@ -17,6 +17,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, sele
 import model_inference
 import medical_review
 import platform_db as db
+from analysis_contract import AnalysisJobResponse, FINISHED, FrameView, job_result
 from clinical import Examination
 from model_protocol import ModelAdapter, ModelInput, ModelOutput
 
@@ -30,7 +31,7 @@ class AnalysisJob(db.Base):
     model_type = Column(String(40), nullable=False)
     model_version = Column(String(80), nullable=False)
     input_sha256 = Column(String(64), nullable=False)
-    state = Column(String(16), nullable=False)
+    state = Column(String(32), nullable=False)
     error = Column(Text)
     output = Column(Text)
     created = Column(DateTime, nullable=False)
@@ -47,6 +48,7 @@ REVIEW_SLOT = BoundedSemaphore(1)
 
 class StructureInput(BaseModel):
     frame_index: int = Field(ge=0, strict=True)
+    frame_view: FrameView = "unconfirmed"
 
 
 class ReviewInput(BaseModel):
@@ -68,8 +70,8 @@ def serialize(job):
     return {
         "id": job.id, "exam_id": job.exam_id, "media_id": job.media_id,
         "model_type": job.model_type, "model_version": job.model_version,
-        "input_sha256": job.input_sha256, "state": job.state, "error": None if job.error == RUNNER_MARKER else job.error,
-        "output": output,
+        "input_sha256": job.input_sha256, "error": None if job.error == RUNNER_MARKER else job.error,
+        **job_result(job.model_type, job.state, output),
         "evidence_frames": evidence,
         "created": job.created.isoformat() + "Z",
         "completed": job.completed.isoformat() + "Z" if job.completed else None,
@@ -145,7 +147,7 @@ def run(identifier, folder, user, legacy=False):
     if legacy:
         if failure:
             raise failure
-        if result["state"] != "succeeded":
+        if result["state"] not in FINISHED:
             raise HTTPException(409, "分析任务已中断")
         return result["output"]
     return result
@@ -166,8 +168,11 @@ def execute_job(model_input, user, model_type, version, execute):
         job_id = job.id
 
     output, failure = None, None
+    state = "failed"
     try:
-        output = json.dumps(execute(job_id), allow_nan=False)
+        payload = execute(job_id)
+        output = json.dumps(payload, allow_nan=False)
+        state = job_result(model_type, "succeeded", payload)["state"]
     except HTTPException as exc:
         failure = exc
     except Exception:
@@ -177,7 +182,7 @@ def execute_job(model_input, user, model_type, version, execute):
     with db.Session.begin() as session:
         session.execute(update(AnalysisJob).where(
             AnalysisJob.id == job_id, AnalysisJob.state == "running",
-        ).values(state="failed" if failure else "succeeded", output=output,
+        ).values(state=state, output=output if failure is None else None,
                  error=str(failure.detail) if failure else None, completed=db.now()))
         job = session.get(AnalysisJob, job_id)
         result = serialize(job)
@@ -214,7 +219,7 @@ def run_review(identifier, folder, kind, user):
         with db.Session() as session:
             previous = session.scalar(select(AnalysisJob).where(
                 AnalysisJob.exam_id == case.id, AnalysisJob.media_id == identifier, AnalysisJob.model_type == model_type,
-                AnalysisJob.model_version == version, AnalysisJob.input_sha256 == fingerprint, AnalysisJob.state == "succeeded",
+                AnalysisJob.model_version == version, AnalysisJob.input_sha256 == fingerprint, AnalysisJob.state.in_(FINISHED),
             ).order_by(AnalysisJob.id.desc()).limit(1))
             if previous is not None:
                 return serialize(previous)
@@ -224,7 +229,7 @@ def run_review(identifier, folder, kind, user):
                        lambda _job_id: medical_review.analyze(config, folder, identifier, kind, metadata, frames))[0]
 
 
-def run_structure(identifier, folder, index, user):
+def run_structure(identifier, folder, body, user):
     with db.Session() as session:
         media = session.get(db.Media, identifier)
         if media is None:
@@ -232,7 +237,7 @@ def run_structure(identifier, folder, index, user):
         case = db.get_case(session, media.case_id, user)
         if session.get(Examination, case.id) is None:
             raise HTTPException(409, "影像尚未关联正式检查")
-    config = checked_structure_configuration()
+    index = body.frame_index
     video = next((path for path in folder.glob("source.*") if path.is_file()), None)
     metadata = folder / "metadata.json"
     if video is None or not metadata.is_file():
@@ -241,14 +246,20 @@ def run_structure(identifier, folder, index, user):
     if index >= len(frames):
         raise HTTPException(422, "所选帧超出视频范围")
     model_input = ModelInput(case.id, identifier, video, sha256(video))
+    frame = {"media_id": identifier, "frame_index": index, "timestamp_ms": frames[index]["offsetMs"]}
+
+    if body.frame_view != "A4C":
+        return execute_job(model_input, user, STRUCTURE_MODEL, "cardiacudc:frame-eligibility",
+                           lambda _job_id: {"frame": frame, "frame_view": body.frame_view})[0]
+
+    config = checked_structure_configuration()
 
     def segment(job_id):
         with TemporaryDirectory(prefix=".structure-", dir=folder) as scratch:
             image = Path(scratch) / "overlay.png"
             output = segment_video(video, index, image, config)
             image.replace(folder / f"structure-{job_id}.png")
-        return {**output, "frame": {"media_id": identifier, "frame_index": index,
-                                     "timestamp_ms": frames[index]["offsetMs"]}}
+        return {**output, "frame": frame, "frame_view": body.frame_view}
 
     version = "cardiacudc:" + CARDIACUDC_SHA256
     return execute_job(model_input, user, STRUCTURE_MODEL, version, segment)[0]
@@ -290,7 +301,8 @@ def recover_jobs():
 
 
 def register(app, media_folder):
-    @app.post("/api/v1/media/{identifier}/review-jobs", status_code=201)
+    @app.post("/api/v1/media/{identifier}/review-jobs", status_code=201,
+              response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def submit_review(identifier: str, body: ReviewInput, user=Depends(db.current)):
         if not REVIEW_SLOT.acquire(blocking=False):
             raise HTTPException(503, "另一个大模型影像复核任务正在运行，请稍后重试。")
@@ -299,20 +311,22 @@ def register(app, media_folder):
         finally:
             REVIEW_SLOT.release()
 
-    @app.post("/api/v1/media/{identifier}/analysis-jobs", status_code=201)
+    @app.post("/api/v1/media/{identifier}/analysis-jobs", status_code=201,
+              response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def submit(identifier: str, user=Depends(db.current)):
         return run(identifier, media_folder(identifier), user)
 
-    @app.post("/api/v1/media/{identifier}/structure-jobs", status_code=201)
+    @app.post("/api/v1/media/{identifier}/structure-jobs", status_code=201,
+              response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def submit_structure(identifier: str, body: StructureInput, user=Depends(db.current)):
         if not STRUCTURE_SLOT.acquire(blocking=False):
             raise HTTPException(503, "另一个四腔分割任务正在运行")
         try:
-            return run_structure(identifier, media_folder(identifier), body.frame_index, user)
+            return run_structure(identifier, media_folder(identifier), body, user)
         finally:
             STRUCTURE_SLOT.release()
 
-    @app.get("/api/v1/analysis-jobs/{key}")
+    @app.get("/api/v1/analysis-jobs/{key}", response_model=AnalysisJobResponse, response_model_exclude_unset=True)
     def status(key: int, user=Depends(db.current)):
         with db.Session() as session:
             job = session.get(AnalysisJob, key)
@@ -333,7 +347,7 @@ def register(app, media_folder):
             raise HTTPException(404, "结构叠图文件不存在")
         return FileResponse(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
-    @app.get("/api/v1/examinations/{key}/analysis-jobs")
+    @app.get("/api/v1/examinations/{key}/analysis-jobs", response_model=list[AnalysisJobResponse], response_model_exclude_unset=True)
     def exam_history(key: int, user=Depends(db.current)):
         with db.Session() as session:
             db.get_case(session, key, user)
@@ -342,7 +356,7 @@ def register(app, media_folder):
             query = select(AnalysisJob).where(AnalysisJob.exam_id == key)
             return [serialize(job) for job in session.scalars(query.order_by(AnalysisJob.id.desc()))]
 
-    @app.get("/api/v1/media/{identifier}/analysis-jobs")
+    @app.get("/api/v1/media/{identifier}/analysis-jobs", response_model=list[AnalysisJobResponse], response_model_exclude_unset=True)
     def media_history(identifier: str, user=Depends(db.current)):
         db.protect_media(identifier, user)
         with db.Session() as session:

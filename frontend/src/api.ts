@@ -1,3 +1,6 @@
+import type {InsufficientEvidence} from './analysis-api.generated'
+import type {AnalysisJob} from './diagnosis-contract'
+
 export type Capabilities={model:string;modelDetail?:string;structureConfigured:boolean;reviewConfigured?:boolean;reviewModel?:string|null;reviewDetail?:string;reviewSampleOnly?:boolean;reviewMaxFrames?:number|null}
 
 const API_BASE='/api/v1'
@@ -15,7 +18,7 @@ export function mediaApiPath(id:string,scope:MediaScope):string{
  return (scope==='samples'?'/public-samples/media/':'/media/')+id
 }
 
-function isRecord(value:unknown):value is Record<string,unknown>{
+export function isRecord(value:unknown):value is Record<string,unknown>{
  return typeof value==='object'&&value!==null&&!Array.isArray(value)
 }
 
@@ -83,6 +86,44 @@ export async function logoutSession():Promise<void>{
 
 export async function api<T>(path:string,body?:unknown,method='POST'):Promise<T>{
  return apiRequest<T>(path,body===undefined?undefined:jsonRequest(body,method))
+}
+
+function isInsufficientEvidence(value:unknown):value is InsufficientEvidence{
+ return isRecord(value)&&(value.reason==='quality'||value.reason==='coverage'||value.reason==='out_of_scope')&&
+  typeof value.message==='string'&&typeof value.next_step==='string'
+}
+
+function parseAnalysisJob<T>(value:unknown, isOutput:(output:unknown)=>output is T):AnalysisJob<T>{
+ if(!isRecord(value)||typeof value.id!=='number'||typeof value.model_type!=='string'||
+    typeof value.model_version!=='string'||typeof value.created!=='string')throw new Error(INVALID_RESPONSE)
+ const {id,model_type,model_version,created,state,error,output}=value
+ const fields={id,model_type,model_version,created}
+ switch(state){
+  case 'succeeded':
+   if(error===null&&isOutput(output))return {...fields,state,error,output}
+   break
+  case 'insufficient_evidence':
+   if(error===null&&isRecord(output)&&isInsufficientEvidence(value.insufficient_evidence))
+    return {...fields,state,error,output,insufficient_evidence:value.insufficient_evidence}
+   break
+  case 'pending':
+  case 'running':
+  case 'failed':
+  case 'interrupted':
+   if(output===null&&(error===null||typeof error==='string'))return {...fields,state,error,output}
+   break
+ }
+ throw new Error(INVALID_RESPONSE)
+}
+
+export async function analysisHistory<T>(path:string,modelType:string,isOutput:(output:unknown)=>output is T):Promise<AnalysisJob<T>[]>{
+ const value=await api<unknown>(path)
+ if(!Array.isArray(value)||!value.every(row=>isRecord(row)&&typeof row.model_type==='string'))throw new Error(INVALID_RESPONSE)
+ return value.filter(row=>row.model_type===modelType).map(row=>parseAnalysisJob(row,isOutput))
+}
+
+export async function submitAnalysis<T>(path:string,body:unknown,isOutput:(output:unknown)=>output is T):Promise<AnalysisJob<T>>{
+ return parseAnalysisJob(await api<unknown>(path,body),isOutput)
 }
 
 export function apiUpload<T=unknown>(path:string,form:FormData):Promise<T>{
