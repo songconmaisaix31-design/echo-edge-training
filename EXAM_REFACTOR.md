@@ -1,5 +1,7 @@
 # 检查管理重构与验收
 
+当前隔离浏览器验收使用 `npm --prefix frontend test`，配置见 [工作规则](AGENTS.md)。下文保留重构时的操作记录。
+
 本次在 feature/web-ui 分支完成，保留原有视觉及哈希路由技术。
 
 ## 页面

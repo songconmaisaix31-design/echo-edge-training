@@ -15,17 +15,19 @@ const password = randomBytes(18).toString('base64url')
 const env = isolatedEnvironment(run, 'verify.db')
 const stanfordVideo = process.env.ECHO_VERIFY_STANFORD_VIDEO
 const stanfordUncovered = '有权重的切面推理和结果读回'
+const [fault, ...extraArgs] = process.argv.slice(2)
+const faultModes = ['--fault=http-500', '--fault=page-error']
+const faultName = faultModes.includes(fault) ? fault.slice('--fault='.length) : null
 
 const report = {
   status: 'failed',
   passed: [],
   browserErrors: [],
+  faultProbe: faultName,
   stanfordInference: {status: stanfordVideo ? 'failed' : 'needs_weights'},
   uncovered: [
     stanfordUncovered,
     '证据不足变体（#29）',
-    '患儿查重、列表分页与历史报告导出',
-    '验收门禁的 HTTP 500 和页面异常负向用例',
     '截图',
   ],
 }
@@ -57,7 +59,7 @@ async function checkPage(page, name) {
   const violations = await page.evaluate(async () => {
     const result = await window.axe.run({runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']})
     return result.violations.filter(({impact}) => impact === 'serious' || impact === 'critical')
-      .map(({id, nodes}) => ({id, targets: nodes.map(({target}) => target)}))
+      .map(({id, nodes}) => ({id, nodes: nodes.map(({target, failureSummary}) => ({target, failureSummary}))}))
   })
   assert.deepEqual(violations, [], `${name} 存在严重的可访问性问题`)
 }
@@ -133,8 +135,135 @@ async function checkStanfordInference(page, origin, examId, media, stanford) {
   report.passed.push('Stanford 真实切面推理，重新加载页面后从分析历史读回同一任务和结果')
 }
 
+async function checkReportHistory(page, origin, {patientUrl, examUrl, otherExamUrl}) {
+  const openReport = async url => {
+    await page.goto(url)
+    await page.getByRole('button', {name: '检查报告', exact: true}).click()
+    return url.split('/').at(-1)
+  }
+  const saveReport = async (examId, text) => {
+    await page.getByLabel('记录内容', {exact: true}).fill(text)
+    const [response] = await Promise.all([
+      page.waitForResponse(item => item.url() === `${origin}/api/v1/cases/${examId}/entries`
+        && item.request().method() === 'POST'),
+      page.getByRole('button', {name: '保存记录', exact: true}).click(),
+    ])
+    assert.equal(response.status(), 201)
+    await page.getByText(text, {exact: true}).waitFor()
+  }
+  const otherText = '另一检查的隔离验收草稿。'
+  const reportText = '当前检查的隔离验收草稿。'
+  const otherId = await openReport(otherExamUrl)
+  await saveReport(otherId, otherText)
+  const examId = await openReport(examUrl)
+  await saveReport(examId, reportText)
+
+  await page.reload()
+  await page.getByText(reportText, {exact: true}).waitFor()
+  assert.equal(await page.getByText(otherText, {exact: true}).count(), 0)
+  await page.goto(patientUrl)
+  await page.getByRole('tab', {name: '历史报告', exact: true}).click()
+  const record = page.getByRole('article').filter({hasText: `检查 #${examId} · 报告日期`})
+  await record.getByText('查看此报告版本', {exact: true}).click()
+  await record.getByText(reportText, {exact: true}).waitFor()
+  await record.getByRole('button', {name: '进入该检查报告', exact: true}).click()
+  await page.getByRole('heading', {name: '报告中心', exact: true}).waitFor()
+  await page.getByText(reportText, {exact: true}).waitFor()
+  assert.equal(await page.getByRole('combobox', {name: '当前检查', exact: true}).inputValue(), examId)
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('link', {name: '导出检查记录 TXT', exact: true}).click(),
+  ])
+  assert.equal(download.suggestedFilename(), `examination-${examId}.txt`)
+  const exported = await readFile(await download.path(), 'utf8')
+  assert.ok(exported.includes(reportText))
+  assert.ok(!exported.includes(otherText))
+  report.passed.push('报告草稿保存、刷新读回、患儿历史关联及 TXT 导出按检查隔离')
+}
+
+async function checkPagination(page) {
+  const rows = page.locator('tbody tr')
+  await page.getByText('第 1 / 2 页 · 每页 10 条', {exact: true}).waitFor()
+  assert.equal(await rows.count(), 10)
+  await page.getByRole('button', {name: '下一页', exact: true}).click()
+  await page.getByText('第 2 / 2 页 · 每页 10 条', {exact: true}).waitFor()
+  assert.equal(await rows.count(), 1)
+}
+
+async function checkPatientAndExamLists(page, patientId) {
+  await page.goto('/#patients/new')
+  await page.getByLabel('姓名或脱敏标识 *', {exact: true}).fill('工作站验收记录')
+  await page.getByLabel('出生日期 *', {exact: true}).fill('2020-01-01')
+  await page.getByText('发现同名且出生日期相同的可访问档案，请人工核对。', {exact: true}).waitFor()
+  const save = page.getByRole('button', {name: '保存患儿档案', exact: true})
+  assert.equal(await save.isDisabled(), true)
+  await page.getByRole('checkbox', {name: /^已核对，仍需保存独立档案/}).check()
+  assert.equal(await save.isEnabled(), true)
+  await page.getByLabel('患儿业务编号', {exact: true}).fill('VERIFY-001')
+  await page.getByText('业务编号已存在，请核对。', {exact: true}).waitFor()
+  assert.equal(await save.isDisabled(), true)
+
+  // 分页记录通过正式接口写入隔离数据库，只使用验收编号。
+  for (let index = 2; index <= 11; index++) {
+    const response = await page.request.post('/api/v1/patients', {
+      data: {name: `分页验收记录 ${index}`, birth: '2020-01-01', sex: 'unknown'},
+    })
+    assert.equal(response.status(), 201)
+  }
+  await page.goto('/#patients')
+  await checkPagination(page)
+  await page.getByLabel('搜索患儿', {exact: true}).fill('VERIFY-001')
+  await page.getByRole('cell', {name: 'VERIFY-001', exact: true}).waitFor()
+  assert.equal(await page.locator('tbody tr').count(), 1)
+  report.passed.push('患儿按姓名和生日查重、业务编号查重、搜索与分页')
+
+  for (let index = 0; index < 9; index++) {
+    const response = await page.request.post('/api/v1/examinations', {
+      data: {patient_id: Number(patientId), kind: '分页验收', parameters: {exam_date: '2024-01-01'}},
+    })
+    assert.equal(response.status(), 201)
+  }
+  await page.goto('/#exams')
+  await checkPagination(page)
+  await page.getByLabel('筛选检查类型', {exact: true}).selectOption('界面验收')
+  await page.getByRole('cell', {name: '界面验收', exact: true}).waitFor()
+  const state = page.getByLabel('筛选检查状态', {exact: true})
+  await state.selectOption('reviewed')
+  assert.equal(await page.locator('tbody tr').count(), 0)
+  await state.selectOption('draft')
+  assert.equal(await page.locator('tbody tr').count(), 1)
+  report.passed.push('检查类型和状态筛选、列表分页')
+}
+
+async function triggerGateFailure(origin, {page, examId, mediaId}) {
+  if (fault === '--fault=page-error') {
+    const [error] = await Promise.all([
+      page.waitForEvent('pageerror', {timeout: 5000}),
+      page.evaluate(() => setTimeout(() => { throw new Error('verify: uncaught page error') }, 0)),
+    ])
+    assert.equal(error.message, 'verify: uncaught page error')
+    return
+  }
+
+  // 仅破坏本轮导入副本的元数据，让正式接口自身返回 HTTP 500。
+  const metadata = join(run, 'media', mediaId, 'metadata.json')
+  const original = await readFile(metadata)
+  try {
+    await writeFile(metadata, '{', 'utf8')
+    const [response] = await Promise.all([
+      page.waitForResponse(item => item.url() === `${origin}/api/v1/media/${mediaId}`
+        && item.request().method() === 'GET'),
+      page.goto(`/#diagnosis/${examId}`),
+    ])
+    assert.equal(response.status(), 500)
+  } finally {
+    await writeFile(metadata, original)
+  }
+}
+
 async function checkWorkstation(origin, stanford) {
-  browser = await chromium.launch({headless: true})
+  browser = await chromium.launch({headless: true, downloadsPath: join(run, 'downloads')})
   const page = await browser.newPage({baseURL: origin, viewport: {width: 1440, height: 960}})
   const visit = hash => page.goto(`${origin}/#${hash}`)
   const button = name => page.getByRole('button', {name, exact: true})
@@ -165,6 +294,15 @@ async function checkWorkstation(origin, stanford) {
   await button('保存患儿档案').click()
   await heading('患儿详情').waitFor()
   const patientUrl = page.url()
+  await button('编辑档案').click()
+  await label('其他重要病史').fill('隔离验收编辑记录。')
+  await button('保存患儿档案').click()
+  await page.getByRole('tab', {name: '临床病史', exact: true}).click()
+  await page.getByText('隔离验收编辑记录。', {exact: true}).waitFor()
+  await page.reload()
+  await page.getByRole('tab', {name: '临床病史', exact: true}).click()
+  await page.getByText('隔离验收编辑记录。', {exact: true}).waitFor()
+  report.passed.push('患儿档案编辑及刷新读回')
   await checkPage(page, '患儿详情')
   await link('创建检查').click()
   await label('检查类型 *').fill('界面验收')
@@ -225,7 +363,8 @@ async function checkWorkstation(origin, stanford) {
   await label('检查日期 *').fill('2024-02-01')
   await button('创建检查').click()
   await heading('检查详情').waitFor()
-  const otherExamId = page.url().split('/').at(-1)
+  const otherExamUrl = page.url()
+  const otherExamId = otherExamUrl.split('/').at(-1)
   assert.notEqual(otherExamId, examId)
   await visit(`diagnosis/${examId}`)
   await button('执行切面识别').waitFor()
@@ -263,6 +402,9 @@ async function checkWorkstation(origin, stanford) {
   assert.equal((await page.request.post('/api/v1/analysis-jobs/1/terminal')).status(), 404)
   assert.equal(Object.hasOwn(features, 'terminalConfigured'), false)
   report.passed.push('旧终端接口和能力字段已移除')
+  await checkReportHistory(page, origin, {patientUrl, examUrl, otherExamUrl})
+  await checkPatientAndExamLists(page, patientId)
+  return {page, examId, mediaId: media.id}
 }
 
 async function webOrigin(server) {
@@ -302,6 +444,7 @@ async function checkLocalEntry(origin) {
 }
 
 try {
+  assert.ok(extraArgs.length === 0 && (!fault || faultModes.includes(fault)), '验收参数无效')
   const stanford = stanfordVideo ? await configureStanford(stanfordVideo) : null
   const operator = {name: user, password}
   await prepareDatabase(python, env, operator)
@@ -309,9 +452,11 @@ try {
   api = service.child
   const target = await service.ready
   web = await createWeb({target, port: 0, cacheDir: join(run, 'shared-vite')})
-  await checkWorkstation(await webOrigin(web), stanford)
+  const origin = await webOrigin(web)
+  const workstation = await checkWorkstation(origin, stanford)
   localWeb = await createWeb({target, port: 0, cacheDir: join(run, 'local-vite'), operator})
   await checkLocalEntry(await webOrigin(localWeb))
+  if (fault) await triggerGateFailure(origin, workstation)
   report.status = 'passed'
 } catch (error) {
   report.error = error instanceof Error ? error.message : String(error)
@@ -334,6 +479,7 @@ try {
   await writeFile(join(run, 'api.log'), apiLog)
   const summary = JSON.stringify(report, null, 2) + '\n'
   await writeFile(join(run, 'report.json'), summary)
-  await writeFile(join(base, 'report.json'), summary)
+  if (!fault) await writeFile(join(base, 'report.json'), summary)
+  else if (faultName) await writeFile(join(base, `${faultName}.json`), summary)
   console.log(`验证报告 ${join(run, 'report.json')}`)
 }

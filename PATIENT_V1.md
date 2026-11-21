@@ -1,5 +1,7 @@
 # 患儿管理 V1.0 交付
 
+当前隔离浏览器验收使用 `npm --prefix frontend test`，配置见 [工作规则](AGENTS.md)。下文保留 V1.0 交付时的操作记录。
+
 ## 范围与路由
 在 feature/web-ui 开发，没有合并 main、没有提交或推送，也未改训练代码。
 保持现有蓝白样式、侧栏、Button、卡片及 hash 路由。
