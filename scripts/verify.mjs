@@ -16,7 +16,9 @@ const password = randomBytes(18).toString('base64url')
 const env = isolatedEnvironment(run, 'verify.db')
 const stanfordVideo = process.env.ECHO_VERIFY_STANFORD_VIDEO
 const nonA4CVideo = process.env.ECHO_VERIFY_NON_A4C_VIDEO
+const multiviewDir = process.env.ECHO_VERIFY_MULTIVIEW_DIR
 const plaxSha256 = 'dddbf2def6a7923c1348fc2ccdb398e08b3a2e414d6ea86e1515349ababe9bff'
+const multiviewUncovered = '用公开教学影像确认两种切面并补齐证据'
 const stanfordUncovered = '有权重的切面推理和结果读回'
 const insufficientUncovered = '切面置信度不足与结果读回'
 const screenshotsUncovered = '1440px 和 1024px 截图'
@@ -36,6 +38,7 @@ const report = {
     stanfordUncovered,
     insufficientUncovered,
     screenshotsUncovered,
+    multiviewUncovered,
   ],
 }
 let api
@@ -230,6 +233,130 @@ async function checkNonA4CFrame(page, origin, examId, media, inputSha256) {
   report.passed.push('真实非 A4C 帧提交后返回适用范围不足，无叠图，刷新后读回同一帧及结果')
 }
 
+async function registeredMultiviewVideos(directory) {
+  if (!directory) return []
+  const fixtures = [
+    ['A4C', 'Damji-et-al-Video-S3-A4C-TV-Endo-1.mp4', '543c6a330eda334e498d8bb2ee7880a46a899c660b5b669d7613ee746d4a9d6c'],
+    ['PLAX', 'Damji-et-al-Video-S1-PSLX-1.mp4', plaxSha256],
+  ]
+  return Promise.all(fixtures.map(async ([view, name, sha256]) => {
+    const file = resolve(root, directory, name)
+    assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), sha256, '多切面验收须使用登记的教学视频')
+    return {view, file}
+  }))
+}
+
+async function checkMultiview(page, origin, {examId, otherExamId, media, clips}) {
+  const responsePath = id => '/api/v1/examinations/' + id + '/multiview'
+  const panel = page.getByRole('region', {name: '多切面评估', exact: true})
+  const picker = page.getByRole('combobox', {name: '当前检查', exact: true})
+  const required = ['A4C', 'PLAX']
+  const labels = {
+    A4C: '心尖四腔心切面（A4C）',
+    PLAX: '胸骨旁长轴切面（PLAX）',
+  }
+  const selectExam = async id => {
+    await picker.locator(`option[value="${id}"]`).waitFor({state: 'attached'})
+    if (await picker.inputValue() !== id) await picker.selectOption(id)
+  }
+  const read = async () => {
+    const response = await page.request.get(responsePath(examId))
+    assert.equal(response.status(), 200)
+    return response.json()
+  }
+  const save = async () => {
+    const [response] = await Promise.all([
+      page.waitForResponse(result => result.url() === origin + responsePath(examId) && result.request().method() === 'PUT'),
+      panel.getByRole('button', {name: '保存本次评估', exact: true}).click(),
+    ])
+    assert.equal(response.status(), 200)
+    return response.json()
+  }
+  const assertCoverage = async (result, covered) => {
+    assert.deepEqual(result.required_views, required)
+    assert.deepEqual(result.coverage, required.map(view => ({view, status: covered.includes(view) ? 'covered' : 'missing'})))
+    assert.equal(result.state, covered.length === required.length ? 'succeeded' : 'insufficient_evidence')
+    assert.equal(Object.hasOwn(result, 'disease_candidates'), false)
+    if (result.state === 'insufficient_evidence') {
+      assert.equal(result.insufficient_evidence.reason, 'coverage')
+      assert.equal(Object.hasOwn(result, 'findings'), false)
+      await checkInsufficientNotice(panel, result.insufficient_evidence)
+    } else {
+      await panel.getByText('必要切面均已有确认帧。', {exact: true}).waitFor()
+    }
+    for (const {view, status} of result.coverage) {
+      await panel.getByText(labels[view] + ' · ' + (status === 'covered' ? '已有确认帧' : '缺少确认帧'), {exact: true}).waitFor()
+    }
+  }
+
+  await page.goto('/#multi')
+  await selectExam(examId)
+  await panel.getByText('本次检查尚未指定多切面评估所需的切面。').waitFor()
+  assert.equal(await panel.getByRole('link', {name: '补充影像'}).count(), 0)
+  for (const view of required) await panel.getByRole('checkbox', {name: labels[view], exact: true}).check()
+  const missing = await save()
+  await assertCoverage(missing, [])
+  await page.reload()
+  await assertCoverage(missing, [])
+  assert.deepEqual(await read(), missing)
+  await checkPage(page, '多切面评估证据不足')
+  assert.equal((await page.request.put(responsePath(examId), {
+    data: {revision: 0, required_views: [], frames: []},
+  })).status(), 409)
+
+  await panel.getByRole('link', {name: '补充影像', exact: true}).click()
+  await page.getByRole('heading', {name: '导入影像', exact: true}).waitFor()
+  await picker.locator(`option[value="${examId}"]`).waitFor({state: 'attached'})
+  assert.equal(await picker.inputValue(), examId)
+  const uploads = []
+  for (const {view, file} of clips) {
+    await page.waitForFunction(() => document.querySelector('input[type=file]')?.disabled === false)
+    const [response] = await Promise.all([
+      page.waitForResponse(result => result.url() === origin + '/api/v1/media' && result.request().method() === 'POST'),
+      page.getByLabel('选择视频文件', {exact: true}).setInputFiles(file),
+    ])
+    assert.equal(response.status(), 201)
+    uploads.push({view, media: await response.json()})
+    await page.waitForFunction(() => document.querySelector('input[type=file]')?.disabled === false)
+  }
+  await page.goto('/#multi')
+  await selectExam(examId)
+  const confirmed = []
+  for (const entry of uploads) {
+    const {view, media: clip} = entry
+    await panel.getByRole('combobox', {name: '证据影像', exact: true}).selectOption(clip.id)
+    const viewPicker = panel.getByRole('combobox', {name: '确认切面', exact: true})
+    await viewPicker.selectOption(view)
+    await panel.getByRole('combobox', {name: '原始帧', exact: true}).selectOption('1')
+    assert.equal(await viewPicker.inputValue(), '')
+    await viewPicker.selectOption(view)
+    await page.waitForFunction(() => document.querySelector('img[alt="待确认原始帧 2"]')?.naturalWidth > 0)
+    await panel.getByRole('button', {name: '添加已确认帧', exact: true}).click()
+    confirmed.push({view, media_id: clip.id, frame_index: 1, timestamp_ms: clip.frames[1].offsetMs})
+    const result = await save()
+    await assertCoverage(result, confirmed.map(frame => frame.view))
+    assert.deepEqual(result.frames, confirmed)
+    await panel.getByRole('link', {name: '查看' + labels[view] + ' · 第 2 帧 · ' + clip.frames[1].offsetMs + ' ms', exact: true}).waitFor()
+    await page.reload()
+    await assertCoverage(result, confirmed.map(frame => frame.view))
+    assert.deepEqual(await read(), result)
+  }
+  if (uploads.length) {
+    const covered = await read()
+    assert.deepEqual(covered.findings, [])
+    report.uncovered = report.uncovered.filter(item => item !== multiviewUncovered)
+    report.passed.push('两段真实教学影像逐帧确认，先拒判再补齐，刷新读回完整覆盖')
+  }
+
+  await selectExam(otherExamId)
+  await panel.getByText('本次检查尚未指定多切面评估所需的切面。').waitFor()
+  assert.equal(await panel.getByRole('list', {name: '切面覆盖'}).count(), 0)
+  assert.equal((await page.request.put(responsePath(otherExamId), {
+    data: {revision: 0, required_views: ['A4C'], frames: [{view: 'A4C', media_id: media.id, frame_index: 0}]},
+  })).status(), 422)
+  report.passed.push('多切面评估缺少必要切面时给出证据不足和补充入口，刷新、并发修改和切换检查隔离通过')
+}
+
 async function checkDiagnosisScreenshots(page, stanford) {
   const scenario = stanford ? 'insufficient_evidence' : 'needs_weights'
   await page.waitForFunction(() => document.querySelector('img[alt="源帧 1"]')?.naturalWidth > 0)
@@ -375,7 +502,7 @@ async function triggerGateFailure(origin, {page, examId, mediaId}) {
   }
 }
 
-async function checkWorkstation(origin, stanford) {
+async function checkWorkstation(origin, stanford, clips) {
   browser = await chromium.launch({headless: true, downloadsPath: join(run, 'downloads')})
   const page = await browser.newPage({baseURL: origin, viewport: {width: 1440, height: 960}})
   const visit = hash => page.goto(`${origin}/#${hash}`)
@@ -387,6 +514,7 @@ async function checkWorkstation(origin, stanford) {
 
   observePage(page, origin)
   assert.equal((await page.request.get('/api/v1/cases')).status(), 401)
+  assert.equal((await page.request.get('/api/v1/examinations/1/multiview')).status(), 401)
   assert.equal((await page.request.post('/api/v1/local-session', {headers: {Origin: origin}})).status(), 404)
   const capabilities = await page.request.get('/api/v1/capabilities')
   assert.equal(capabilities.status(), 200)
@@ -495,6 +623,7 @@ async function checkWorkstation(origin, stanford) {
   if (stanford) await checkStanfordInference(page, origin, examId, media, stanford)
   await checkDiagnosisScreenshots(page, stanford)
   if (!stanford) await checkNonA4CFrame(page, origin, examId, media, inputSha256)
+  await checkMultiview(page, origin, {examId, otherExamId, media, clips})
 
   const patientReload = page.waitForRequest(request => request.url() === `${origin}/api/v1/patients/${patientId}`)
   await page.goto(patientUrl)
@@ -558,6 +687,7 @@ try {
   assert.ok(extraArgs.length === 0 && (!fault || faultModes.includes(fault)), '验收参数无效')
   await checkAnalysisContract(python)
   const stanford = stanfordVideo ? await configureStanford(stanfordVideo) : null
+  const clips = await registeredMultiviewVideos(multiviewDir)
   const operator = {name: user, password}
   await prepareDatabase(python, env, operator)
   const service = startApi(python, env, data => { apiLog += data })
@@ -565,7 +695,7 @@ try {
   const target = await service.ready
   web = await createWeb({target, port: 0, cacheDir: join(run, 'shared-vite')})
   const origin = await webOrigin(web)
-  const workstation = await checkWorkstation(origin, stanford)
+  const workstation = await checkWorkstation(origin, stanford, clips)
   localWeb = await createWeb({target, port: 0, cacheDir: join(run, 'local-vite'), operator})
   await checkLocalEntry(await webOrigin(localWeb))
   if (fault) await triggerGateFailure(origin, workstation)
