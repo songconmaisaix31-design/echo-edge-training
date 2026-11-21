@@ -166,6 +166,8 @@ def clip_entry(row, where):
     relative = PurePosixPath(path)
     split = string(row, "split", where, required=False)
     mode = string(row, "mode", where)
+    site_value = row["site_code"]
+    site = site_value.strip() if isinstance(site_value, str) else string(row, "site_code", where, required=False)
     if (not relative.name or relative.is_absolute() or ".." in relative.parts or ":" in path
             or relative.suffix.lower() not in MEDIA_SUFFIXES or relative.name.upper() == "DICOMDIR"):
         raise ValueError(f"{where} 的 relative_path 需要指向 DICOM cine、AVI、MP4 或 MOV 相对路径")
@@ -176,7 +178,7 @@ def clip_entry(row, where):
         raise ValueError(f"{where} 的视频时长必须大于零")
     return clip_id, study, Clip(
         relative.as_posix(), patient, split, duration, row["_row"], mode,
-        string(row, "device_model", where, required=False), string(row, "site_code", where, required=False),
+        string(row, "device_model", where, required=False), site,
     )
 
 
@@ -647,6 +649,28 @@ def preflight_media(args, checkable, clips, confirmed, issue):
     return files, checked
 
 
+def check_site_splits(registered, assignments, issue):
+    site_rows = defaultdict(list)
+    blocked = False
+    for clip_id, clip in registered:
+        split = clip.split or assignments.get(clip.patient)
+        if not split:
+            continue
+        location = {"row": clip.row, "file": clip.path, "clip_id": clip_id, "split": split}
+        if not clip.site:
+            blocked = True
+            issue("missing_site_code", "已分组的影像缺少中心代号 site_code", sheet="视频清单", **location)
+            continue
+        site_rows[clip.site].append(location)
+    for site, rows in site_rows.items():
+        if len({row["split"] for row in rows}) > 1:
+            blocked = True
+            issue("site_cross_split", "同一中心被分到多个数据分组", sheet="视频清单", site_code=site,
+                  row=rows[0]["row"], file=rows[0]["file"], related_rows=[row["row"] for row in rows],
+                  related_files=rows)
+    return blocked
+
+
 def preflight(args):
     protected = {args.labels.resolve(), args.media.resolve()}
     if args.report.suffix.lower() != ".json" or args.report.resolve() in protected:
@@ -670,11 +694,14 @@ def preflight(args):
         if clip.split:
             patient_rows[clip.patient].append({"row": clip.row, "file": clip.path, "clip_id": clip_id, "split": clip.split})
     split_conflict = False
-    for rows in patient_rows.values():
+    manual_assignments = {}
+    for patient, rows in patient_rows.items():
         if len({row["split"] for row in rows}) > 1:
             split_conflict = True
             issue("patient_cross_split", "同一患儿被分到多个数据分组", sheet="视频清单", row=rows[0]["row"],
                   file=rows[0]["file"], related_rows=[row["row"] for row in rows], related_files=rows)
+        else:
+            manual_assignments[patient] = rows[0]["split"]
     if patient_rows:
         for clip_id, rows in segments.items():
             clip = clips[clip_id]
@@ -683,9 +710,9 @@ def preflight(args):
                 issue("missing_patient_split", "已启用手工分组，参与训练的患儿缺少 split",
                       sheet="视频清单", row=clip.row, file=clip.path, clip_id=clip_id,
                       related_rows=[row.row for row in rows], related_sheet="片段标注")
+        if check_site_splits(registered, manual_assignments, issue):
+            split_conflict = True
 
-    files, checked = preflight_media(args, checkable, clips, confirmed, issue)
-    resolved = {}
     assignments = {}
 
     def coverage_issue(code, message, missing=()):
@@ -699,6 +726,14 @@ def preflight(args):
     if segments and not split_conflict and all(len(labels[task]) >= 2 for task in TASKS):
         try:
             assignments = patient_splits(clips, segments, labels, args.seed, args.val_fraction, coverage_issue)
+        except ValueError as error:
+            issue("split_label_coverage", str(error), sheet="视频清单", row=4, related_sheet="标签字典")
+        if not patient_rows and check_site_splits(registered, assignments, issue):
+            split_conflict = True
+    files, checked, resolved = [], [], {}
+    if not split_conflict:
+        files, checked = preflight_media(args, checkable, clips, confirmed, issue)
+        if assignments:
             for split in ("train", "val", "test"):
                 selected = [(clips[clip_id], rows) for clip_id, rows in segments.items()
                             if assignments[clips[clip_id].patient] == split]
@@ -714,8 +749,6 @@ def preflight(args):
                 clip = clips.get(item["clip_id"])
                 if clip is not None and clip.row == item["row"]:
                     item["effective_split"] = assignments.get(clip.patient)
-        except ValueError as error:
-            issue("split_label_coverage", str(error), sheet="视频清单", row=4, related_sheet="标签字典")
     errors = sum(item["severity"] == "error" for item in issues)
     report = {"status": "blocked" if errors else "passed", "workbook": str(args.labels), "media": str(args.media),
               "sample_fps": args.sample_fps, "max_frames_per_segment": args.max_frames_per_segment,
@@ -982,7 +1015,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     media = commands.add_parser("verify-media", help="使用真实视频验证读取、预处理和 CUDA 前向")
     training = commands.add_parser("train", help="使用本次训练配置预检，通过后执行监督微调")
-    checking = commands.add_parser("preflight", help="在 CPU 检查标注、文件、帧时间和患儿分组")
+    checking = commands.add_parser("preflight", help="在 CPU 检查标注、文件、帧时间及患儿和中心划分")
     for command in (media, training, checking):
         command.add_argument("--media", type=Path, required=True)
         command.add_argument("--cache-dir", type=Path, required=True)
