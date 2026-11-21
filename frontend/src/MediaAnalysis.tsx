@@ -78,8 +78,9 @@ export function ViewAnalysis({id, available, detail, scope='private'}:{id:string
  return <>
   <p>{detail || '当前影像尚无切面推理结果。'}</p>
   {result&&<div className="record" role="status">
-   <b>AI 切面结论</b>
+   <b>{result.view===null?'证据不足':'AI 切面结论'}</b>
    <p>{result.view ? '模型判断这段视频更符合' + viewNames[result.view] + '。' : '模型未达到判定阈值，暂无法确认这段视频的切面。'}</p>
+   {result.view===null&&<p>请复核当前影像，或补采所需切面后重试。</p>}
    <p>当前模型仅比较心尖四腔心切面与胸骨旁短轴切面。结果供研究复核。</p>
    <details>
     <summary>查看模型详情</summary>

@@ -32,7 +32,7 @@ npm --prefix frontend test
 
 `ECHO_VERIFY_PYTHON` 可指向已安装后端依赖的 Python。`scripts/verify.mjs` 用空闲端口启动 Uvicorn 和 Vite，并由 Playwright 验证真实页面。`work/verify/report.json` 记录验收结果和未覆盖项。当前浏览器验收统一使用 `npm --prefix frontend test`。`test_exam_server.py`、`frontend/test-exams.cjs` 和 `frontend/test-patients.cjs` 保留供查阅历史。
 
-按 [浏览器验证视频](fixtures/SOURCES.md) 配置本机 Stanford 权重和公开教学视频后，同一命令会验证真实切面推理及刷新读回。
+按 [浏览器验证视频](fixtures/SOURCES.md) 配置本机 Stanford 权重和公开教学视频后，同一命令会验证真实切面推理、低置信度拒判及刷新读回。每轮保存 1440px 和 1024px 两档辅助诊断页面截图，`report.json` 的 `screenshots` 字段记录路径和窗口尺寸。
 
 单独核对失败门禁时运行以下命令。两条命令应退出 `1`，在 `work/verify/http-500.json` 和 `work/verify/page-error.json` 分别记录实际 HTTP 500 和未捕获异常。
 
@@ -45,7 +45,7 @@ npm --prefix frontend test -- --fault=page-error
 
 | Issues | 交付条件 |
 | --- | --- |
-| [#23](https://github.com/songconmaisaix31-design/echo-edge-training/issues/23)、[#24](https://github.com/songconmaisaix31-design/echo-edge-training/issues/24)、[#25](https://github.com/songconmaisaix31-design/echo-edge-training/issues/25)、[#26](https://github.com/songconmaisaix31-design/echo-edge-training/issues/26) | 补齐后端 Lint 和导入约束、前端 `strictTypeChecked`、基于 FastAPI 响应模型的 OpenAPI 类型生成和漂移检查。重设计合并后启用完整样式变量规则。补齐证据不足和截图验收。 |
+| [#23](https://github.com/songconmaisaix31-design/echo-edge-training/issues/23)、[#24](https://github.com/songconmaisaix31-design/echo-edge-training/issues/24)、[#26](https://github.com/songconmaisaix31-design/echo-edge-training/issues/26) | 补齐后端 Lint 和导入约束、前端 `strictTypeChecked`、基于 FastAPI 响应模型的 OpenAPI 类型生成和漂移检查。重设计合并后启用完整样式变量规则。 |
 | [#27](https://github.com/songconmaisaix31-design/echo-edge-training/issues/27)–[#30](https://github.com/songconmaisaix31-design/echo-edge-training/issues/30) | 由专家确认协议及数据要求，交付覆盖状态、证据不足和多切面评估。 |
 | [#31](https://github.com/songconmaisaix31-design/echo-edge-training/issues/31)–[#34](https://github.com/songconmaisaix31-design/echo-edge-training/issues/34) | 交付结构化报告、审核版本关联、专家状态规则和受控反馈。 |
 | [#35](https://github.com/songconmaisaix31-design/echo-edge-training/issues/35)–[#42](https://github.com/songconmaisaix31-design/echo-edge-training/issues/42) | 维护数据许可与评估记录，补齐隐私和临床约束的可执行验证。 |
