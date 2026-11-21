@@ -135,7 +135,7 @@
 | D3 | 未开始 | 协议、手册与 `scripts/ef_review.py` 已合并；120 例判读与 40 例重测未执行 |
 | D4 | 未开始 | `docs/ECHOFOCUS.md` 记录方法、三个复现坑与成人 CAMUS 零样本；缺同批测试集对照 |
 | D5 | 进行中 | 协议 0.2 送审、`evaluate_multiview.py` 就绪；等机构签核与冻结输入 |
-| D6 | 通过 | 红线检查退出码 0；`rules/banned-claims.txt` 生效 |
+| D6 | 通过 | 红线检查退出码 0；`rules/banned-claims.txt` 生效；[模型卡](MODEL_CARD.md) 已建并被 README 引用 |
 | D7 | 未复跑 | 验收命令已定义；需在装有前后端依赖的环境执行并留存 `work/verify/report.json` |
 
 按三级放行：

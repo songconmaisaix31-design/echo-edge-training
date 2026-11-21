@@ -174,6 +174,11 @@ def check_d6():
     script = ROOT / "scripts" / "check_redlines.py"
     if not script.exists():
         return check.fail("缺少 scripts/check_redlines.py")
+    card = [p for p in ("docs/MODEL_CARD.md", "MODEL_CARD.md") if (ROOT / p).exists()]
+    if not card:
+        return check.fail("缺少模型卡（适用人群 / 已知失效 / 非器械声明）")
+    if "MODEL_CARD.md" not in read("README.md"):
+        return check.fail("README 未引用模型卡")
     result = subprocess.run([sys.executable, "-X", "utf8", str(script)],
                             cwd=ROOT, capture_output=True, text=True)
     if "ModuleNotFoundError" in result.stderr:
