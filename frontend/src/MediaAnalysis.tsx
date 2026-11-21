@@ -80,7 +80,7 @@ export function ViewAnalysis({id, available, detail, scope='private'}:{id:string
   {result&&<div className="record" role="status">
    <b>AI 切面结论</b>
    <p>{result.view ? '模型判断这段视频更符合' + viewNames[result.view] + '。' : '模型未达到判定阈值，暂无法确认这段视频的切面。'}</p>
-   <span>当前模型仅比较心尖四腔心切面与胸骨旁短轴切面。结果供研究复核。</span>
+   <p>当前模型仅比较心尖四腔心切面与胸骨旁短轴切面。结果供研究复核。</p>
    <details>
     <summary>查看模型详情</summary>
     <p>抽样 {result.sampled_frames} 帧 · A4C {(result.probabilities.A4C*100).toFixed(1)}% · PSAX {(result.probabilities.PSAX*100).toFixed(1)}%</p>

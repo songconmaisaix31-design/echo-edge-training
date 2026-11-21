@@ -30,13 +30,22 @@ python -m pytest backend -q
 npm --prefix frontend test
 ```
 
-`ECHO_VERIFY_PYTHON` 可指向已安装后端依赖的 Python。`scripts/verify.mjs` 用空闲端口启动 Uvicorn 和 Vite，再由 Playwright 操作真实页面。用户入口变更须验证对应操作路径。退出码非零即验收失败，`work/verify/report.json` 记录实际执行结果和未覆盖项。旧检查和患儿脚本保留供补齐历史场景时参考。
+`ECHO_VERIFY_PYTHON` 可指向已安装后端依赖的 Python。`scripts/verify.mjs` 用空闲端口启动 Uvicorn 和 Vite，并由 Playwright 验证真实页面。`work/verify/report.json` 记录验收结果和未覆盖项。当前浏览器验收统一使用 `npm --prefix frontend test`。`test_exam_server.py`、`frontend/test-exams.cjs` 和 `frontend/test-patients.cjs` 保留供查阅历史。
+
+按 [浏览器验证视频](fixtures/SOURCES.md) 配置本机 Stanford 权重和公开教学视频后，同一命令会验证真实切面推理及刷新读回。
+
+单独核对失败门禁时运行以下命令。两条命令应退出 `1`，在 `work/verify/http-500.json` 和 `work/verify/page-error.json` 分别记录实际 HTTP 500 和未捕获异常。
+
+```text
+npm --prefix frontend test -- --fault=http-500
+npm --prefix frontend test -- --fault=page-error
+```
 
 ## 后续任务
 
 | Issues | 交付条件 |
 | --- | --- |
-| [#23](https://github.com/songconmaisaix31-design/echo-edge-training/issues/23)、[#24](https://github.com/songconmaisaix31-design/echo-edge-training/issues/24)、[#25](https://github.com/songconmaisaix31-design/echo-edge-training/issues/25)、[#26](https://github.com/songconmaisaix31-design/echo-edge-training/issues/26) | 补齐后端 Lint 和导入约束、前端 `strictTypeChecked`、基于 FastAPI 响应模型的 OpenAPI 类型生成和漂移检查。重设计合并后启用完整样式变量规则。补齐获准影像及权重的推理、证据不足、结果读回和门禁失败用例。 |
+| [#23](https://github.com/songconmaisaix31-design/echo-edge-training/issues/23)、[#24](https://github.com/songconmaisaix31-design/echo-edge-training/issues/24)、[#25](https://github.com/songconmaisaix31-design/echo-edge-training/issues/25)、[#26](https://github.com/songconmaisaix31-design/echo-edge-training/issues/26) | 补齐后端 Lint 和导入约束、前端 `strictTypeChecked`、基于 FastAPI 响应模型的 OpenAPI 类型生成和漂移检查。重设计合并后启用完整样式变量规则。补齐证据不足和截图验收。 |
 | [#27](https://github.com/songconmaisaix31-design/echo-edge-training/issues/27)–[#30](https://github.com/songconmaisaix31-design/echo-edge-training/issues/30) | 由专家确认协议及数据要求，交付覆盖状态、证据不足和多切面评估。 |
 | [#31](https://github.com/songconmaisaix31-design/echo-edge-training/issues/31)–[#34](https://github.com/songconmaisaix31-design/echo-edge-training/issues/34) | 交付结构化报告、审核版本关联、专家状态规则和受控反馈。 |
 | [#35](https://github.com/songconmaisaix31-design/echo-edge-training/issues/35)–[#42](https://github.com/songconmaisaix31-design/echo-edge-training/issues/42) | 维护数据许可与评估记录，补齐隐私和临床约束的可执行验证。 |
