@@ -180,6 +180,7 @@ Exit code `0` means the data passed; `1` means the report found a problem. The r
 | [docs/PUBLIC_DATASETS.md](docs/PUBLIC_DATASETS.md) | Availability, licences and citations for every public source.<br/>每个公开数据源的可下载性、许可与引用。 |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md), [docs/DELIVERABLES.md](docs/DELIVERABLES.md) | Intended use, known failure modes and what counts as done.<br/>适用边界、已知失效方式，以及每项交付的完成判据。 |
 | [docs/EXPERIMENT_PROTOCOL.md](docs/EXPERIMENT_PROTOCOL.md) | How runs are repeated, ablated and recorded before anything is claimed.<br/>重复、消融与记录的规则，先定方法再谈结论。 |
+| [docs/ABLATION.md](docs/ABLATION.md) | What was varied, by how much, and where the differences stayed inside seed noise.<br/>改了什么、改了多少、哪些差异仍在种子波动之内。 |
 | [docs/ESP32_TERMINAL.md](docs/ESP32_TERMINAL.md), [docs/firmware/](docs/firmware) | Terminal plan, wiring, pin limits, I²C addresses, ECW registers and pitfalls.<br/>终端方案、接线、引脚禁区、I²C 地址、ECW 寄存器与踩坑记录。 |
 | [docs/V1_E2E_ACCEPTANCE.md](docs/V1_E2E_ACCEPTANCE.md) | The full end-to-end acceptance record, module by module.<br/>逐模块的全系统端到端验收记录。 |
 | [docs/batch-01/](docs/batch-01) | The first batch: cleaning report, selected-frame index, expert handoff.<br/>第 01 批：清洗报告、抽帧索引、专家交接。 |

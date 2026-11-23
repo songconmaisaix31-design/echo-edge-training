@@ -84,7 +84,7 @@ $python = '.\.venv\Scripts\python.exe'
 | 切分 | CAMUS 官方留出折，494 段 / 247 患儿，按患儿隔离 |
 | 种子 | 0、1、2（见 Release `emb-head-camus-v1`） |
 | 常数基线 | 已记录，作为"模型有没有学到东西"的下限 |
-| 已做的消融 | `layers` 1 vs 2、每视频 clip 数 8 vs 16（结论均为无显著差异） |
+| 已做的消融 | `dim-model` 128/256/384、`lr` 3e-4/1e-3/3e-3、`layers` 1 vs 2、每视频 clip 数 8 vs 16；结论均为无显著差异，明细见 [消融记录](ABLATION.md) |
 
 **复现性已核对**：用 `experiment.py baseline` 以同一配置重跑三个种子，结果与先前手工运行逐位一致，说明在这台 CPU 上同种子可复现。跨机器或换 `torch` 版本后须重新核对，不能默认一致。
 

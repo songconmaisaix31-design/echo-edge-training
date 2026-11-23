@@ -11,7 +11,9 @@
     "camus-quality-v2": {"kind":"project","release":"camus-structure-quality-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/camus-structure-quality-v1/CAMUS-Quality-test.json"},
     "ef-test": {"kind":"project","release":"stanford-ef-epoch5","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/stanford-ef-epoch5/Stanford-EF-test.json"},
     "emb-head-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/EmbeddingHead-CAMUS-summary.json"},
-    "echofocus-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/echofocus_camus.json"}
+    "echofocus-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/echofocus_camus.json"},
+    "emb-head-ablation-dim": {"kind":"project","release":"emb-head-camus-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-ablation-v1/ledger-dim-model.json"},
+    "emb-head-ablation-lr": {"kind":"project","release":"emb-head-camus-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-ablation-v1/ledger-lr.json"}
   },
   "claims": [
     {"path":"docs/CAMUS.md","text":"v2 患者-视位分类结果中，Good 召回率 0.511、Medium 召回率 0.895、Poor 召回率 0.333。混淆矩阵（行=参考，列=预测，Good/Medium/Poor）：`[[24, 23, 0], [3, 34, 1], [0, 10, 5]]`。","reports":["camus-quality-v2"]},
@@ -51,7 +53,13 @@
     {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 常数基线（训练均值） | 8.14 | −3.03 | — | 0.50 | — |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
     {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 冻结 PanEcho + 注意力头（3 种子均值） | 7.25 | −3.57 | 0.569 | 0.700 | 5.57–8.86 |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
     {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 同上，验证集仿射校准后 | 6.90 | −1.16 | 0.569 | 0.700 | 5.43–8.57 |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
-    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| EchoFocus_Measure 零样本（同一批嵌入，第三方模型 / 本院测量） | 45.61 | −45.61 | 0.415 | 0.580 | — |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["echofocus-camus"]}
+    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| EchoFocus_Measure 零样本（同一批嵌入，第三方模型 / 本院测量） | 45.61 | −45.61 | 0.415 | 0.580 | — |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["echofocus-camus"]},
+    {"path":"docs/ABLATION.md","text":"| dim-model=128 | 7.39 ± 0.53 | 6.95 ± 0.32 | 0.571 ± 0.016 | 0.700 ± 0.010 | 无显著差异（Δ +0.15，阈值 ±1.06） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-dim"]},
+    {"path":"docs/ABLATION.md","text":"| dim-model=256（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-dim"]},
+    {"path":"docs/ABLATION.md","text":"| dim-model=384 | 7.31 ± 0.21 | 6.72 ± 0.07 | 0.578 ± 0.014 | 0.706 ± 0.009 | 无显著差异（Δ +0.06，阈值 ±0.41） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-dim"]},
+    {"path":"docs/ABLATION.md","text":"| lr=0.0003 | 7.18 ± 0.28 | 6.79 ± 0.09 | 0.555 ± 0.031 | 0.672 ± 0.026 | 无显著差异（Δ -0.07，阈值 ±0.56） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]},
+    {"path":"docs/ABLATION.md","text":"| lr=0.001（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]},
+    {"path":"docs/ABLATION.md","text":"| lr=0.003 | 7.22 ± 0.35 | 6.94 ± 0.04 | 0.548 ± 0.022 | 0.667 ± 0.016 | 无显著差异（Δ -0.02，阈值 ±0.69） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]}
   ],
   "exceptions": [
 
