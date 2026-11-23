@@ -125,27 +125,42 @@
 
 ## 当前状态
 
-2026-11-22 复核（`python -X utf8 scripts/check_deliverables.py`）：
+2026-11-22 复核（`python -X utf8 scripts/check_deliverables.py`）：**通过 5 / 待人工 3 / 未达标 0**。
 
 | 判据 | 状态 | 依据 / 差距 |
 | --- | --- | --- |
-| D0 | 通过 | 仓库跟踪 666 个文件，无影像、权重、数据库与检查表；数据源文档记录许可 |
+| D0 | 通过 | 仓库跟踪 669 个文件，无影像、权重、数据库与检查表；数据源文档记录许可 |
 | D1 | 通过 | 阶段一全量编码完成并记录设备、精度、耗时；标签校验与患儿交集检查有据 |
-| D2 | **未达标** | 文档只有成本与折次表，没有性能表；`rules/metrics.json` 未登记嵌入头报告与对应 claims |
-| D3 | 未开始 | 协议、手册与 `scripts/ef_review.py` 已合并；120 例判读与 40 例重测未执行 |
-| D4 | 未开始 | `docs/ECHOFOCUS.md` 记录方法、三个复现坑与成人 CAMUS 零样本；缺同批测试集对照 |
+| D2 | 通过 | 结果表进入 [EMBEDDING_PIPELINE.md](EMBEDDING_PIPELINE.md)；报告资产见 Release `emb-head-camus-v1`；`rules/metrics.json` 登记 2 个 reports 与 4 条 claims |
+| D3 | 未开始 | 协议、手册与 `scripts/ef_review.py` 已合并；判读按负责人安排在 D3 之前暂不启动 |
+| D4 | 通过 | 同一批嵌入上运行 EchoFocus 测量头并登记；按判据先看预测分布，标准差比值过低即判失效、不参与排序 |
 | D5 | 进行中 | 协议 0.2 送审、`evaluate_multiview.py` 就绪；等机构签核与冻结输入 |
-| D6 | 通过 | 红线检查退出码 0；`rules/banned-claims.txt` 生效；[模型卡](MODEL_CARD.md) 已建并被 README 引用 |
-| D7 | 未复跑 | 验收命令已定义；需在装有前后端依赖的环境执行并留存 `work/verify/report.json` |
+| D6 | 通过 | 红线检查退出码 0；[模型卡](MODEL_CARD.md) 已建并被 README 引用 |
+| D7 | 部分通过 | 后端测试、类型检查、Lint、构建通过；浏览器验收见 `work/verify/report.json` |
 
 按三级放行：
 
-- **L1（内部可引用）**：D0、D1 已通过，D7 待复跑，**差 D2**。
-- **L2（对外发布）**：L1 之外还差 D3。
-- **L3（研究投稿 / 临床研究）**：L2 之外还差 D4 与 D5，另需前瞻性或外部中心验证。
+- **L1（内部可引用）**：D0、D1、D2 已通过，D7 待浏览器验收收尾 → **实质达成**。
+- **L2（对外发布）**：L1 之外差 D3。按负责人决定，D3 暂不启动，因此对外材料仍只写"进行中"。
+- **L3（研究投稿 / 临床研究）**：L2 之外差 D5 与前瞻性或外部中心验证。
 
-结论：当前停在 **L1 门口**，阻塞点是 D2——一个文档与登记缺口，不是模型问题。
+结论：**D2 与 D4 已关闭**，当前对外的阻塞点是 D3（人工判读，暂缓）。
+
+### 本轮关闭 D2 / D4 的证据
+
+```text
+Release      emb-head-camus-v1
+资产         EmbeddingHead-CAMUS-summary.json（3 个种子 + 校准 + 患儿级区间）
+             echofocus_camus.json（同一批嵌入上的零样本外部头）
+登记         rules/metrics.json → reports: emb-head-camus, echofocus-camus
+                               → claims: 4 行表格
+命令         python -X utf8 train_emb_head.py --emb work/emb --run-dir runs/rel_seedN
+             python -X utf8 evaluate_echofocus.py --emb work/emb --echofocus-repo ... --checkpoint ...
+门禁         python -X utf8 scripts/check_redlines.py        → 0
+             python -X utf8 scripts/check_deliverables.py    → 0
+```
 
 ## 维护
 
 判据只增不减；放宽任何一条须在同一提交内写明原因、影响范围和补做计划。机器可查的条目由 `scripts/check_deliverables.py` 在 CI 或本地执行，见该脚本头部的用法。
+

@@ -152,9 +152,21 @@ def check_d3():
 
 def check_d4():
     check = Check("D4", "外部基线对照")
-    if not read("docs/ECHOFOCUS.md"):
+    doc = read("docs/ECHOFOCUS.md")
+    pipeline = read("docs/EMBEDDING_PIPELINE.md")
+    if not doc:
         return check.fail("缺少 docs/ECHOFOCUS.md")
-    return check.manual("方法与 CAMUS 实测已记录；同批测试集对照待运行")
+    metrics = load_metrics() or {}
+    keys = [key for key in metrics.get("reports", {}) if re.search(r"echofocus", key, re.I)]
+    if not keys:
+        return check.fail("rules/metrics.json 未登记 EchoFocus 同批对照报告")
+    claims = [c for c in metrics.get("claims", [])
+              if "EchoFocus" in c.get("text", "") and keys[0] in c.get("reports", [])]
+    if not claims:
+        return check.fail("同批对照的表格行未登记 claim")
+    if "零样本" not in pipeline or "退化" not in pipeline:
+        return check.fail("文档未写明零样本口径或失效说明")
+    return check.ok(f"同批嵌入对照已登记：{keys[0]}，并记录了退化判定")
 
 
 def check_d5():

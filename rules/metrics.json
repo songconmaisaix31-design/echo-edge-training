@@ -9,7 +9,9 @@
     "camus-structure": {"kind":"project","release":"camus-structure-quality-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/camus-structure-quality-v1/CAMUS-MultiStructure-test.json"},
     "camus-quality-v1": {"kind":"project","release":"camus-structure-quality-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/camus-structure-quality-v1/CAMUS-Quality-baseline-v1-test.json"},
     "camus-quality-v2": {"kind":"project","release":"camus-structure-quality-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/camus-structure-quality-v1/CAMUS-Quality-test.json"},
-    "ef-test": {"kind":"project","release":"stanford-ef-epoch5","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/stanford-ef-epoch5/Stanford-EF-test.json"}
+    "ef-test": {"kind":"project","release":"stanford-ef-epoch5","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/stanford-ef-epoch5/Stanford-EF-test.json"},
+    "emb-head-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/EmbeddingHead-CAMUS-summary.json"},
+    "echofocus-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/echofocus_camus.json"}
   },
   "claims": [
     {"path":"docs/CAMUS.md","text":"v2 患者-视位分类结果中，Good 召回率 0.511、Medium 召回率 0.895、Poor 召回率 0.333。混淆矩阵（行=参考，列=预测，Good/Medium/Poor）：`[[24, 23, 0], [3, 34, 1], [0, 10, 5]]`。","reports":["camus-quality-v2"]},
@@ -45,7 +47,13 @@
     {"path":"docs/STANFORD_LV_MODEL.md","text":"| PSAX | 768 | 184 | 0.9137 | 0.8460 | 0.9151 | 0.8482 |","headers":["分组","帧数","患儿数","帧级 Dice","帧级 IoU","患儿平均 Dice","患儿平均 IoU"],"reports":["lv-test"]},
     {"path":"docs/STANFORD_LV_MODEL.md","text":"| 全部（186 名患儿） | 0.9012 – 0.9132 | 0.8271 – 0.8449 |","headers":["分组","Dice 95% 区间","IoU 95% 区间"],"reports":["lv-bootstrap"]},
     {"path":"docs/STANFORD_LV_MODEL.md","text":"| A4C（151 名患儿） | 0.8851 – 0.9013 | 0.8033 – 0.8250 |","headers":["分组","Dice 95% 区间","IoU 95% 区间"],"reports":["lv-bootstrap"]},
-    {"path":"docs/STANFORD_LV_MODEL.md","text":"| PSAX（184 名患儿） | 0.9082 – 0.9211 | 0.8372 – 0.8574 |","headers":["分组","Dice 95% 区间","IoU 95% 区间"],"reports":["lv-bootstrap"]}
+    {"path":"docs/STANFORD_LV_MODEL.md","text":"| PSAX（184 名患儿） | 0.9082 – 0.9211 | 0.8372 – 0.8574 |","headers":["分组","Dice 95% 区间","IoU 95% 区间"],"reports":["lv-bootstrap"]},
+    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 常数基线（训练均值） | 8.14 | −3.03 | — | 0.50 | — |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
+    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 冻结 PanEcho + 注意力头（3 种子均值） | 7.25 | −3.57 | 0.569 | 0.700 | 5.57–8.86 |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
+    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| 同上，验证集仿射校准后 | 6.90 | −1.16 | 0.569 | 0.700 | 5.43–8.57 |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["emb-head-camus"]},
+    {"path":"docs/EMBEDDING_PIPELINE.md","text":"| EchoFocus_Measure 零样本（同一批嵌入，第三方模型 / 本院测量） | 45.61 | −45.61 | 0.415 | 0.580 | — |","headers":["口径","MAE（EF 百分点）","偏差","Pearson r","EF<50 AUROC","患儿级 95% 区间"],"reports":["echofocus-camus"]}
   ],
-  "exceptions": []
+  "exceptions": [
+
+  ]
 }
