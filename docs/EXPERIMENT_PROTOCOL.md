@@ -86,4 +86,8 @@ $python = '.\.venv\Scripts\python.exe'
 | 常数基线 | 已记录，作为"模型有没有学到东西"的下限 |
 | 已做的消融 | `layers` 1 vs 2、每视频 clip 数 8 vs 16（结论均为无显著差异） |
 
+**复现性已核对**：用 `experiment.py baseline` 以同一配置重跑三个种子，结果与先前手工运行逐位一致，说明在这台 CPU 上同种子可复现。跨机器或换 `torch` 版本后须重新核对，不能默认一致。
+
+基线结果本身记录在 [EMBEDDING_PIPELINE.md](EMBEDDING_PIPELINE.md) 的表格与 Release `emb-head-camus-v1` 中，本文件不重复数字。
+
 下一步消融建议按这个顺序，一次一个：`dim-model` → `lr` → `epochs` → 每视频 clip 数 → 是否加校准。每项都用 `experiment.py ablate` 跑，不手工改脚本。
