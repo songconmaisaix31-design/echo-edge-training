@@ -13,7 +13,11 @@
     "emb-head-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/EmbeddingHead-CAMUS-summary.json"},
     "echofocus-camus": {"kind":"project","release":"emb-head-camus-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-v1/echofocus_camus.json"},
     "emb-head-ablation-dim": {"kind":"project","release":"emb-head-camus-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-ablation-v1/ledger-dim-model.json"},
-    "emb-head-ablation-lr": {"kind":"project","release":"emb-head-camus-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-ablation-v1/ledger-lr.json"}
+    "emb-head-ablation-lr": {"kind":"project","release":"emb-head-camus-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-ablation-v1/ledger-lr.json"},
+    "emb-feat-clip8": {"kind":"project","release":"emb-head-camus-feature-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-feature-ablation-v1/ledger-clip8.json"},
+    "emb-feat-clip16": {"kind":"project","release":"emb-head-camus-feature-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-feature-ablation-v1/ledger-clip16.json"},
+    "emb-feat-res256": {"kind":"project","release":"emb-head-camus-feature-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-feature-ablation-v1/ledger-res256.json"},
+    "emb-feat-dual": {"kind":"project","release":"emb-head-camus-feature-ablation-v1","report":"https://github.com/songconmaisaix31-design/echo-edge-training/releases/download/emb-head-camus-feature-ablation-v1/ledger-dual.json"}
   },
   "claims": [
     {"path":"docs/CAMUS.md","text":"v2 患者-视位分类结果中，Good 召回率 0.511、Medium 召回率 0.895、Poor 召回率 0.333。混淆矩阵（行=参考，列=预测，Good/Medium/Poor）：`[[24, 23, 0], [3, 34, 1], [0, 10, 5]]`。","reports":["camus-quality-v2"]},
@@ -59,7 +63,13 @@
     {"path":"docs/ABLATION.md","text":"| dim-model=384 | 7.31 ± 0.21 | 6.72 ± 0.07 | 0.578 ± 0.014 | 0.706 ± 0.009 | 无显著差异（Δ +0.06，阈值 ±0.41） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-dim"]},
     {"path":"docs/ABLATION.md","text":"| lr=0.0003 | 7.18 ± 0.28 | 6.79 ± 0.09 | 0.555 ± 0.031 | 0.672 ± 0.026 | 无显著差异（Δ -0.07，阈值 ±0.56） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]},
     {"path":"docs/ABLATION.md","text":"| lr=0.001（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]},
-    {"path":"docs/ABLATION.md","text":"| lr=0.003 | 7.22 ± 0.35 | 6.94 ± 0.04 | 0.548 ± 0.022 | 0.667 ± 0.016 | 无显著差异（Δ -0.02，阈值 ±0.69） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]}
+    {"path":"docs/ABLATION.md","text":"| lr=0.003 | 7.22 ± 0.35 | 6.94 ± 0.04 | 0.548 ± 0.022 | 0.667 ± 0.016 | 无显著差异（Δ -0.02，阈值 ±0.69） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-head-ablation-lr"]},
+    {"path":"docs/ABLATION.md","text":"| 8 clip（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-clip16"]},
+    {"path":"docs/ABLATION.md","text":"| 16 clip | 7.06 ± 0.28 | 7.03 ± 0.21 | 0.544 ± 0.014 | 0.669 ± 0.015 | 无显著差异（Δ -0.19，阈值 ±0.55） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-clip16"]},
+    {"path":"docs/ABLATION.md","text":"| 224 px（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-res256"]},
+    {"path":"docs/ABLATION.md","text":"| 256 px | 7.33 ± 0.63 | 6.95 ± 0.30 | 0.499 ± 0.070 | 0.663 ± 0.059 | 无显著差异（Δ +0.08，阈值 ±1.27） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-res256"]},
+    {"path":"docs/ABLATION.md","text":"| 按视频（基线） | 7.25 ± 0.14 | 6.90 ± 0.24 | 0.569 ± 0.026 | 0.700 ± 0.015 | 基线 |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-dual"]},
+    {"path":"docs/ABLATION.md","text":"| 按患儿（2CH+4CH 拼接） | 6.96 ± 0.57 | 6.84 ± 0.56 | 0.512 ± 0.141 | 0.655 ± 0.060 | 无显著差异（Δ -0.29，阈值 ±1.15） |","headers":["配置","MAE（未校准）","MAE（校准后）","Pearson r","AUROC（EF<50）","判定"],"reports":["emb-feat-dual"]}
   ],
   "exceptions": [
 
