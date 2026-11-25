@@ -69,9 +69,9 @@ npm --prefix frontend test -- --fault=page-error
 
 | Issues | 交付条件 |
 | --- | --- |
-| [#23](https://github.com/songconmaisaix31-design/echo-edge-training/issues/23)、[#24](https://github.com/songconmaisaix31-design/echo-edge-training/issues/24)、[#26](https://github.com/songconmaisaix31-design/echo-edge-training/issues/26) | 补齐后端 Lint 和导入约束、前端 `strictTypeChecked`、基于 FastAPI 响应模型的 OpenAPI 类型生成和漂移检查。重设计合并后启用完整样式变量规则。 |
+| [#58](https://github.com/songconmaisaix31-design/echo-edge-training/issues/58) | 清空 `rules/pyright-baseline.json`，把后端类型检查提升到严格模式。 |
 | [#27](https://github.com/songconmaisaix31-design/echo-edge-training/issues/27)–[#30](https://github.com/songconmaisaix31-design/echo-edge-training/issues/30) | 由专家确认协议及数据要求，交付覆盖状态、证据不足和多切面评估。 |
 | [#31](https://github.com/songconmaisaix31-design/echo-edge-training/issues/31)–[#34](https://github.com/songconmaisaix31-design/echo-edge-training/issues/34) | 交付结构化报告、审核版本关联、专家状态规则和受控反馈。 |
-| [#35](https://github.com/songconmaisaix31-design/echo-edge-training/issues/35)–[#42](https://github.com/songconmaisaix31-design/echo-edge-training/issues/42) | 维护数据许可与评估记录，补齐隐私和临床约束的可执行验证。 |
+| [#35](https://github.com/songconmaisaix31-design/echo-edge-training/issues/35)、[#36](https://github.com/songconmaisaix31-design/echo-edge-training/issues/36) | 维护数据许可与评估记录，补齐隐私和临床约束的可执行验证；「不做」清单见已关闭的 #37–#42。 |
 | [#7](https://github.com/songconmaisaix31-design/echo-edge-training/issues/7)–[#11](https://github.com/songconmaisaix31-design/echo-edge-training/issues/11) | 等待授权原始数据、评估协议和独立验证，再进行训练与导出。 |
-| [#12](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)、[#43](https://github.com/songconmaisaix31-design/echo-edge-training/issues/43)、[#46](https://github.com/songconmaisaix31-design/echo-edge-training/issues/46) | 由负责人决定旧设备联动任务；按归档结果更新三份历史文档的卷首说明。 |
+| [#12](https://github.com/songconmaisaix31-design/echo-edge-training/issues/12)、[#46](https://github.com/songconmaisaix31-design/echo-edge-training/issues/46) | 由负责人决定旧设备联动任务；按归档结果更新三份历史文档的卷首说明。 |
