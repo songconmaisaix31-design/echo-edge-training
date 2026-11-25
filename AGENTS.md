@@ -36,7 +36,7 @@ npm --prefix frontend test
 ```text
 python -m pip install -r scripts/lint-requirements.txt
 python -m ruff check backend
-lint-imports
+python -X utf8 scripts/check_imports.py
 python -X utf8 scripts/check_pyright.py
 ```
 
