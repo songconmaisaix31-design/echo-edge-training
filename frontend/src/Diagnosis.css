@@ -28,3 +28,10 @@
 @media(max-width:1050px){.diagnosis-layout{grid-template-columns:minmax(0,1fr)}.diagnosis-header-actions{justify-content:flex-start}}
 @media(max-width:750px){.diagnosis-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:430px){.diagnosis-tablist button{font-size:12px}.diagnosis-viewer .cine-image{height:270px}}
+
+/* 诊断视窗内的对比度修正：玻璃主题把工具栏改成半透明白，落在深色视窗上会
+   变成中灰，浅色文字因此不达标。这里把承载文字的两种表面改成不透明，并把
+   文字压深，保证 AA 对比度不依赖底下的视频画面。 */
+.diagnosis-viewer .context-bar{background:#f7faff;border-color:#d9e3ef}
+.diagnosis-viewer .context-bar label{color:#2c4463}
+.diagnosis-viewer .outline{background:#f4f8fc;border-color:#c9d7e6;color:#2c4463}

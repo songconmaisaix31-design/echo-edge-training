@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react'
 import type {ReactNode} from 'react'
 import {createRoot} from 'react-dom/client'
-import {Activity,LayoutDashboard,Users,ClipboardList,Film,ScanLine,Layers,MessagesSquare,FileText,Settings,ArrowUpRight,Search,LogOut,RefreshCw} from 'lucide-react'
+import {ClipboardList,ScanLine,Users,FileText,ArrowUpRight,Search,LogOut,RefreshCw} from 'lucide-react'
 import {Button} from './button'
 import Modules from './Modules'
 import Exams from './Exams'
@@ -12,11 +12,12 @@ import {structureEvidenceHref} from './diagnosis-contract'
 import {useCapabilities} from './use-capabilities'
 import './style.css'
 import './shell.css'
+import './soft-blue.css'
+import './glass.css'
 type User={name:string;role:string}
 type Case={id:number;title:string;notes:string;status:string}
 import Diagnosis from './Diagnosis'
-const navigation=[['home','临床工作台',LayoutDashboard],['patients','患儿管理',Users],['exams','检查管理',ClipboardList],['media','影像管理',Film],['workspace','AI影像分析',ScanLine],['multi','多切面分析',Layers],['diagnosis','AI 辅助诊断',ScanLine],['experts','专家协作',MessagesSquare],['reports','报告中心',FileText],['settings','系统管理',Settings]] as const
-const demoNavigation=navigation.filter(([id])=>['home','patients','exams','media','workspace','diagnosis'].includes(id))
+import {WorkspaceSidebar,WorkspaceSections,workspaceNavigation} from './WorkspaceNavigation'
 
 function useWorkbenchPage(){
  const [page,setPage]=useState(location.hash.slice(1)||'home')
@@ -28,20 +29,19 @@ function useWorkbenchPage(){
  return page
 }
 
-function WorkbenchShell({page, links, identity, footer, children}:{page:string;links:readonly (typeof navigation)[number][];identity:ReactNode;footer:string;children:ReactNode}){
- const active=page.split('/')[0]
- const selected=links.find(link=>link[0]===active)
+function WorkbenchShell({page, demo=false, identity, footer, children}:{page:string;demo?:boolean;identity:ReactNode;footer:string;children:ReactNode}){
+ const {selected}=workspaceNavigation(page,demo)
  return <div className="app-shell"><aside className="sidebar">
-  <a className="wordmark" href="#home"><Activity/> Echo Edge</a><div className="workspace-label">研究工作区</div>
-  <nav>{links.map(([id,name,Icon])=><a key={id} href={'#'+id} aria-current={active===id?'page':undefined}><Icon size={18}/>{name}</a>)}</nav>
+  <a className="wordmark" href="#home"><span className="brand-logo" aria-hidden="true"><img src="/cardio-bridge-logo-original.png" alt="" width="650" height="730"/></span> Cardio bridge</a><div className="workspace-label">研究工作区</div>
+  <WorkspaceSidebar page={page} demo={demo}/>
   <div className="sidebar-foot"><span className="status-dot"/> {footer}</div>
- </aside><div className="shell-body"><header className="shell-header"><span>{selected?.[1]||'页面不存在'}</span><div className="user-area">{identity}</div></header>
- {children}</div></div>
+ </aside><div className="shell-body"><header className="shell-header"><span>{selected?.label||'页面不存在'}</span><div className="user-area">{identity}</div></header>
+ <WorkspaceSections page={page} demo={demo}/>{children}</div></div>
 }
 
 function Demo(){
  const page=useWorkbenchPage()
- return <WorkbenchShell page={page} links={demoNavigation} identity="公开演示" footer="公开样例">
+ return <WorkbenchShell page={page} demo identity="公开演示" footer="公开样例">
   <PublicSamples route={page}/>
  </WorkbenchShell>
 }
@@ -92,18 +92,18 @@ function App(){
  }
  if(signingOut)return <main role="status">正在退出登录…</main>
  if(!user&&__ECHO_LOCAL_WORKSTATION__)return <main className="dashboard">
-  <h1>Echo Edge</h1>
+  <h1>Cardio bridge</h1>
   {error?<><p role="alert">{error}</p><Button onClick={()=>location.reload()}>重新连接</Button></>
    :<p role="status">正在连接工作站…</p>}
  </main>
  if(!user&&__ECHO_PUBLIC_SAMPLES__)return <main className="dashboard">
-  <h1>Echo Edge 工作站</h1>
+  <h1>Cardio bridge 工作站</h1>
   {loading?<p role="status">正在读取工作站权限…</p>:<><p>此工作站需要已授权的会话。</p><a href="/">查看公开样例</a></>}
  </main>
- if(!user)return <div className="auth-layout"><section className="auth-brand"><div className="wordmark"><Activity/> Echo Edge</div><div><span className="eyebrow">儿童心脏超声 · 研究工作区</span><h1>让每一段影像<br/>得到细致审阅。</h1><p>连接影像、分析与专家复核的专业工作空间。</p></div><small>内部研究与验证</small></section><section className="auth-form"><form onSubmit={login}><span className="eyebrow">欢迎回来</span><h2>登录工作区</h2><p>使用由管理员开通的账号继续。</p><label>账号<input name="name" required autoComplete="username" placeholder="请输入账号"/></label><label>密码<input name="password" type="password" required autoComplete="current-password" placeholder="请输入密码"/></label>{error&&<div role="alert" className="error">{error}</div>}<Button disabled={busy||loading}>{busy?'正在登录…':'登录'}<ArrowUpRight size={16}/></Button><details><summary>首次使用，如何创建账号？</summary><p>请在本机运行已提供的 Create-Operator.cmd，设置密码后使用 operator 登录。其他账号由管理员开通。</p></details></form></section></div>
+ if(!user)return <div className="auth-layout"><section className="auth-brand"><div className="wordmark"><span className="brand-logo" aria-hidden="true"><img src="/cardio-bridge-logo-original.png" alt="" width="650" height="730"/></span> Cardio bridge</div><div><span className="eyebrow">儿童心脏超声 · 研究工作区</span><h1>让每一段影像<br/>得到细致审阅。</h1><p>连接影像、分析与专家复核的专业工作空间。</p></div><small>内部研究与验证</small></section><section className="auth-form"><form onSubmit={login}><span className="eyebrow">欢迎回来</span><h2>登录工作区</h2><p>使用由管理员开通的账号继续。</p><label>账号<input name="name" required autoComplete="username" placeholder="请输入账号"/></label><label>密码<input name="password" type="password" required autoComplete="current-password" placeholder="请输入密码"/></label>{error&&<div role="alert" className="error">{error}</div>}<Button disabled={busy||loading}>{busy?'正在登录…':'登录'}<ArrowUpRight size={16}/></Button><details><summary>首次使用，如何创建账号？</summary><p>请在本机运行已提供的 Create-Operator.cmd，设置密码后使用 operator 登录。其他账号由管理员开通。</p></details></form></section></div>
  const visible=cases.filter(c=>(c.title.includes(search)||String(c.id).includes(search))&&(!status||c.status===status))
- return <WorkbenchShell page={page} links={navigation} footer={__ECHO_LOCAL_WORKSTATION__?'工作站环境':'授权工作环境'} identity={<><span className="avatar">{user.name.slice(0,1).toUpperCase()}</span>{user.name}{!__ECHO_LOCAL_WORKSTATION__&&<Button variant="ghost" aria-label="退出登录" onClick={()=>setSigningOut(true)}><LogOut size={17}/></Button>}</>}>
- {page==='home'?<main className="dashboard"><div className="dashboard-title"><div><span className="eyebrow">工作概览</span><h1>临床工作台</h1><p>从病例开始，继续影像阅览与人工复核。</p></div><Button asChild><a href="#workspace">进入影像工作站<ArrowUpRight size={16}/></a></Button></div><div className="overview-grid">{[['可访问病例',cases.length],['待人工审核',cases.filter(c=>c.status==='submitted').length],['已完成审核',cases.filter(c=>c.status==='reviewed').length]].map(([label,value])=><section className="metric" key={label}><span>{label}</span><strong>{loading?'—':value}</strong><small>当前账号可访问的最近 200 条</small></section>)}</div><section className="queue"><div className="queue-title"><div><h2>病例队列</h2><p>选择工作站中的病例，继续处理影像。</p></div><Button variant="ghost" aria-label="刷新病例" disabled={loading} onClick={()=>void load()}><RefreshCw size={16}/></Button></div><div className="queue-filters"><label><Search size={17}/><input aria-label="搜索病例" placeholder="搜索编号或病例名称" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="病例状态" value={status} onChange={e=>setStatus(e.target.value)}><option value="">全部状态</option><option value="draft">草稿</option><option value="submitted">待审核</option><option value="reviewed">已审核</option></select></div>{error&&<p role="alert" className="error">{error}</p>}<table><thead><tr><th>病例编号</th><th>病例名称</th><th>处理状态</th><th>备注</th></tr></thead><tbody>{visible.map(c=><tr key={c.id}><td className="mono">#{c.id}</td><td>{c.title}</td><td><span className={'state '+c.status}>{{draft:'草稿',submitted:'待审核',reviewed:'已审核'}[c.status]||c.status}</span></td><td>{c.notes||'—'}</td></tr>)}</tbody></table>{!visible.length&&<div className="empty-state"><ClipboardList size={30}/><h3>{loading?'正在读取病例':'暂无匹配病例'}</h3><p>在影像工作站创建病例后，会自动出现在这里。</p></div>}</section><ModelAvailability/></main>:page.split('/')[0]==='patients'?<Patients key={page} route={page}/>:page.split('/')[0]==='exams'?<Exams key={page} route={page}/>:page.split('/')[0]==='diagnosis'?<Diagnosis key={page} route={page}/>:<Modules key={page} page={page} role={user.role}/>}
+ return <WorkbenchShell page={page} footer={__ECHO_LOCAL_WORKSTATION__?'工作站环境':'授权工作环境'} identity={<><span className="avatar">{user.name.slice(0,1).toUpperCase()}</span>{user.name}{!__ECHO_LOCAL_WORKSTATION__&&<Button variant="ghost" aria-label="退出登录" onClick={()=>setSigningOut(true)}><LogOut size={17}/></Button>}</>}>
+ {page==='home'?<main className="dashboard home-dashboard"><div className="dashboard-title home-hero"><div><span className="eyebrow">工作概览</span><h1>临床工作台</h1><p>从病例开始，继续影像阅览与人工复核。</p></div><Button asChild><a href="#workspace">进入影像工作站<ArrowUpRight size={16}/></a></Button></div><nav className="quick-actions" aria-label="常用操作">{([['patients','患儿档案',Users],['exams/new','新建检查',ClipboardList],['workspace','影像分析',ScanLine],['reports','检查报告',FileText]] as const).map(([id,label,Icon])=><a href={'#'+String(id)} key={String(id)}><span className="quick-action-icon"><Icon size={22}/></span><span>{String(label)}</span><ArrowUpRight size={15}/></a>)}</nav><div className="overview-grid">{[['可访问病例',cases.length],['待人工审核',cases.filter(c=>c.status==='submitted').length],['已完成审核',cases.filter(c=>c.status==='reviewed').length]].map(([label,value])=><section className="metric" key={label}><span>{label}</span><strong>{loading?'—':value}</strong><small>当前账号可访问的最近 200 条</small></section>)}</div><section className="queue"><div className="queue-title"><div><h2>病例队列</h2><p>选择工作站中的病例，继续处理影像。</p></div><Button variant="ghost" aria-label="刷新病例" disabled={loading} onClick={()=>void load()}><RefreshCw size={16}/></Button></div><div className="queue-filters"><label><Search size={17}/><input aria-label="搜索病例" placeholder="搜索编号或病例名称" value={search} onChange={e=>setSearch(e.target.value)}/></label><select aria-label="病例状态" value={status} onChange={e=>setStatus(e.target.value)}><option value="">全部状态</option><option value="draft">草稿</option><option value="submitted">待审核</option><option value="reviewed">已审核</option></select></div>{error&&<p role="alert" className="error">{error}</p>}<table><thead><tr><th>病例编号</th><th>病例名称</th><th>处理状态</th><th>备注</th></tr></thead><tbody>{visible.map(c=><tr key={c.id}><td className="mono">#{c.id}</td><td>{c.title}</td><td><span className={'state '+c.status}>{{draft:'草稿',submitted:'待审核',reviewed:'已审核'}[c.status]||c.status}</span></td><td>{c.notes||'—'}</td></tr>)}</tbody></table>{!visible.length&&<div className="empty-state"><ClipboardList size={30}/><h3>{loading?'正在读取病例':'暂无匹配病例'}</h3><p>在影像工作站创建病例后，会自动出现在这里。</p></div>}</section><ModelAvailability/></main>:page.split('/')[0]==='patients'?<Patients key={page} route={page}/>:page.split('/')[0]==='exams'?<Exams key={page} route={page}/>:page.split('/')[0]==='diagnosis'?<Diagnosis key={page} route={page}/>:<Modules key={page} page={page} role={user.role}/>}
  </WorkbenchShell>
 }
 const root=document.getElementById('root')

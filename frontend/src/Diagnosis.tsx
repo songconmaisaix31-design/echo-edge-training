@@ -52,7 +52,7 @@ export default function Diagnosis({route}:{route:string}){
  }
 
  return <main className="dashboard business diagnosis">
-  <div className="dashboard-title diagnosis-heading"><div><span className="eyebrow">Echo Edge · 研究工作区</span><h1>AI 辅助诊断</h1><p>关联影像与复核证据。当前仅供研究复核，不用于临床诊断或转诊决策。</p></div>
+  <div className="dashboard-title diagnosis-heading"><div><span className="eyebrow">Cardio bridge · 研究工作区</span><h1>AI 辅助诊断</h1><p>关联影像与复核证据。当前仅供研究复核，不用于临床诊断或转诊决策。</p></div>
    <div className="diagnosis-header-actions">
     {exam&&<span className={'state '+exam.status}>检查 · {states[exam.status]||exam.status}</span>}
     <span className="state">疾病诊断 · 未接入</span>

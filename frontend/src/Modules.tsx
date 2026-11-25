@@ -58,7 +58,7 @@ export default function Modules({page,role}:{page:string;role:string}){
  const current=cases.find(c=>String(c.id)===caseId)
  const hasExam=exams.some(exam=>String(exam.id)===caseId)
  const isWork=page==='workspace'
- return <main className={'dashboard business '+(isWork?'dark-work':'')}><div className="dashboard-title"><div><span className="eyebrow">Echo Edge · 研究工作区</span><h1>{labels[page]}</h1></div><Button variant="outline" disabled={busy} onClick={()=>{refreshCapabilities(value=>value+1);void run(async()=>{await load();await details(caseId)})}}>刷新数据</Button></div>
+ return <main className={'dashboard business '+(isWork?'dark-work':'')}><div className="dashboard-title"><div><span className="eyebrow">Cardio bridge · 研究工作区</span><h1>{labels[page]}</h1></div><Button variant="outline" disabled={busy} onClick={()=>{refreshCapabilities(value=>value+1);void run(async()=>{await load();await details(caseId)})}}>刷新数据</Button></div>
  {error&&<p role="alert" className="error">{error}</p>}{notice&&<p role="status">{notice}</p>}
  {page==='settings'?<><section className="queue padded"><h2>模型状态</h2>{[
   ['切面识别',capability],['影像质量',reviewCapability],['结构分割',structureCapability],['异常征象',reviewCapability],
