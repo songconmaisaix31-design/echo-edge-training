@@ -136,7 +136,7 @@
 | D4 | 通过 | 同一批嵌入上运行 EchoFocus 测量头并登记；按判据先看预测分布，标准差比值过低即判失效、不参与排序 |
 | D5 | 进行中 | 协议 0.2 送审、`evaluate_multiview.py` 就绪；等机构签核与冻结输入 |
 | D6 | 通过 | 红线检查退出码 0；[模型卡](MODEL_CARD.md) 已建并被 README 引用 |
-| D7 | 部分通过 | 后端测试、类型检查、Lint、构建通过；浏览器验收见 `work/verify/report.json` |
+| D7 | 通过 | 后端 14 项测试通过（5 项因未配置历史库跳过）、typecheck / lint / build 均为 0、浏览器验收 14 项通过（3 项未覆盖项需模型权重）。报告见 `work/verify/report.json` |
 
 按三级放行：
 
