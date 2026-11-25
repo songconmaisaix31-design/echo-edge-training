@@ -18,7 +18,9 @@ ignore = ["E501", "B008"]
 
 [tool.pyright]
 include = ["backend"]
-exclude = ["**/node_modules", "**/__pycache__", ".venv", "work", "runs"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", "work", "runs",
+           # 这两个是独立 CLI 适配器，靠 sys.path 注入复用训练脚本，不参与应用的类型检查
+           "backend/stanford_cpu.py", "backend/cardiacudc_frame.py"]
 # stanford_cpu.py 与 cardiacudc_frame.py 会引用仓库根目录的训练脚本，加上根路径才能解析。
 extraPaths = ["."]
 typeCheckingMode = "basic"
