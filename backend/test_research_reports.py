@@ -1,10 +1,9 @@
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 import main
 import platform_db as db
 from analysis_jobs import AnalysisJob
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 def test_consultation_review_and_immutable_report(tmp_path, monkeypatch):

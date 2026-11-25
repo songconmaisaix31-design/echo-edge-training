@@ -1,0 +1,48 @@
+name: Checks
+
+# 后端 Lint / 导入约束 / 类型基线，以及前端的类型、Lint 与构建。
+# 公开文本红线在 redlines.yml，两者独立。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt -r scripts/lint-requirements.txt
+      - name: Ruff
+        run: python -m ruff check backend
+      - name: Import contracts
+        run: lint-imports
+      - name: Pyright baseline
+        run: python -X utf8 scripts/check_pyright.py
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build

@@ -1,12 +1,13 @@
 from types import SimpleNamespace
+
+import main
+import model_inference
+import platform_db as db
+from clinical import Examination, Patient
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import main
-import platform_db as db
-from clinical import Examination, Patient
-import model_inference
 
 
 def test_job_failure_and_history_isolation(tmp_path, monkeypatch):
@@ -57,8 +58,9 @@ def test_job_failure_and_history_isolation(tmp_path, monkeypatch):
     assert client.get("/api/v1/examinations/2/analysis-jobs").json() == []
     assert client.post("/api/v1/media/" + ids[1] + "/analysis-jobs").status_code == 422
 from datetime import timedelta
-from analysis_jobs import AnalysisJob, RUNNER_MARKER, recover_jobs, runner_lock
+
 import pytest
+from analysis_jobs import RUNNER_MARKER, AnalysisJob, recover_jobs, runner_lock
 
 
 def test_startup_recovery_preserves_completed_jobs(tmp_path, monkeypatch):

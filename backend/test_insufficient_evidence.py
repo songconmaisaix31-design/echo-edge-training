@@ -5,15 +5,14 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
+import platform_db as db
 import pytest
-from pydantic import TypeAdapter
-from sqlalchemy import create_engine
-
 from analysis_contract import AnalysisJobResponse
 from analysis_jobs import AnalysisJob, execute_job, serialize
 from medical_review import STEPFUN_MODEL
 from model_protocol import ModelInput
-import platform_db as db
+from pydantic import TypeAdapter
+from sqlalchemy import create_engine
 
 
 def test_approved_review_indeterminate():

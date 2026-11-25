@@ -1,5 +1,6 @@
 from alembic import op
-from clinical import Patient, Examination, Entry
+from clinical import Entry, Examination, Patient
+
 revision = '0002'
 down_revision = '0001'
 def upgrade():

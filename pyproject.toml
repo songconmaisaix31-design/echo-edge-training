@@ -1,0 +1,69 @@
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = [".venv", "work", "runs", "data", "node_modules", "frontend"]
+
+[tool.ruff.lint]
+# E/F 是语法与未用项，I 是导入顺序，B 是常见陷阱，UP 是语言升级。
+# 暂不启用 E501：行宽由审阅把关，不在门禁里制造噪声。
+# B008 例外：FastAPI 的 Depends()/Query() 就是写在默认参数里的惯用法。
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# 迁移脚本与测试会在导入前设置环境变量或 sys.path。
+"backend/migrations/**" = ["E402", "F401"]
+"backend/test_*.py" = ["E402"]
+"scripts/**" = ["E402"]
+
+[tool.pyright]
+include = ["backend"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", "work", "runs"]
+typeCheckingMode = "basic"
+pythonVersion = "3.13"
+reportMissingImports = "error"
+reportMissingTypeStubs = "none"
+
+[tool.importlinter]
+root_packages = ["backend"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "后端不得依赖训练、推理与评测脚本"
+type = "forbidden"
+source_modules = ["backend"]
+forbidden_modules = [
+  "train_echo",
+  "train_camus",
+  "train_cardiacudc",
+  "train_echonet_views",
+  "train_emb_head",
+  "train_stanford_ef",
+  "train_stanford_lv",
+  "infer_stanford",
+  "evaluate_echo",
+  "evaluate_patient_heldout",
+  "evaluate_multiview",
+  "evaluate_echofocus",
+  "benchmark_echo",
+  "embed_panecho",
+  "stanford_edge",
+  "stanford_tensorrt",
+  "edge_onnx",
+]
+# 唯一例外：backend/stanford_cpu.py 是给推理用的独立 CLI，它的职责就是复用训练时
+# 的预处理与权重常量，保证推理数值和训练一致。它不在 FastAPI 应用内、也不被 import。
+ignore_imports = [
+  "backend.stanford_cpu -> benchmark_echo",
+  "backend.stanford_cpu -> evaluate_echo",
+  "backend.stanford_cpu -> train_echo",
+  "backend.stanford_cpu -> train_echonet_views",
+  "backend.cardiacudc_frame -> train_cardiacudc",
+  "backend.test_multiview_independent -> evaluate_multiview",
+]
+
+[[tool.importlinter.contracts]]
+name = "分析契约不得反向依赖接口层"
+type = "forbidden"
+source_modules = ["backend.analysis_contract", "backend.model_protocol"]
+forbidden_modules = ["backend.main", "backend.clinical", "backend.platform_db"]

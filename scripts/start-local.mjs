@@ -43,7 +43,7 @@ try {
   api = service.child
   web = await createWeb({target: await service.ready, port, cacheDir: join(directory, 'vite'), operator})
   await web.listen()
-  console.log(`Echo Edge 本机工作站 http://127.0.0.1:${port}/`)
+  console.log(`Cardio bridge 本机工作站 http://127.0.0.1:${port}/`)
 } catch (error) {
   await stop()
   throw error

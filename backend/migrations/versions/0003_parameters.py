@@ -1,6 +1,7 @@
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from exam_parameters import ClinicalVersion, Measurement
+
 revision='0003'
 down_revision='0002'
 def upgrade():

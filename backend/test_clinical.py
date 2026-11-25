@@ -1,10 +1,10 @@
-import pytest
+import main
+import platform_db as p
+from clinical import Examination, Patient
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
-import platform_db as p
-import main
-from clinical import Patient, Examination, Entry
+
 
 def test_clinical_flow(tmp_path, monkeypatch):
     engine = create_engine("sqlite:///"+str(tmp_path/"clinical.db"))

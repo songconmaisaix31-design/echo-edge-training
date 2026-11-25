@@ -93,3 +93,4 @@ htmlcov/
 
 # 面板固件的编译产物 (elf/map/merged 合计 30MB+, 不该进仓库)
 firmware/*/build/
+.import_linter_cache/

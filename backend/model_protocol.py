@@ -1,7 +1,8 @@
 """Contract for task runners. Only the released Stanford adapter is enabled."""
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 ModelType = Literal["view_classification", "cardiac_structure", "abnormality_detection"]
 

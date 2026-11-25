@@ -1,15 +1,14 @@
 import json
 import os
-from pathlib import Path
-from shutil import copyfile
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
 import unittest
+from pathlib import Path
+from shutil import copyfile
+from tempfile import TemporaryDirectory
 
 from evaluate_multiview import PUBLIC_CLIPS, PUBLIC_SOURCE, public_frames
 from multiview_study import Exam, Frame, heldout_exams, metric_rates, outcome_counts
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
