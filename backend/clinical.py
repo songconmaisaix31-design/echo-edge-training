@@ -1,15 +1,18 @@
 from __future__ import annotations
+
 import json
 import secrets
 from datetime import date
 from datetime import date as Date
-from typing import Literal, Optional
+from typing import Literal
+
+import platform_db as p
 from fastapi import Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, select, update
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, select
 from sqlalchemy.exc import IntegrityError
-import platform_db as p
+
 
 def business_number():
     return "EE-" + secrets.token_hex(6).upper()
@@ -59,7 +62,7 @@ class Entry(p.Base):
 class MedicalEvent(BaseModel):
     kind: Literal["surgery", "intervention"]
     description: str = Field(min_length=1, max_length=2000)
-    date: Optional[Date] = None
+    date: Date | None = None
 
     @field_validator("date")
     @classmethod
@@ -72,14 +75,14 @@ class PatientClinical(BaseModel):
     main_problem: str = Field("", max_length=4000)
     congenital_diagnosis: str = Field("", max_length=4000)
     other_diagnosis: str = Field("", max_length=4000)
-    gestation_weeks: Optional[int] = Field(None, ge=0, le=45)
-    gestation_days: Optional[int] = Field(None, ge=0, le=6)
-    birth_weight_g: Optional[float] = Field(None, gt=0, le=10000, allow_inf_nan=False)
+    gestation_weeks: int | None = Field(None, ge=0, le=45)
+    gestation_days: int | None = Field(None, ge=0, le=6)
+    birth_weight_g: float | None = Field(None, gt=0, le=10000, allow_inf_nan=False)
     events: list[MedicalEvent] = Field(default_factory=list, max_length=100)
 
 class PatientInput(BaseModel):
-    business_number: Optional[str] = Field(None, max_length=40, pattern=r"^[A-Za-z0-9-]+$")
-    clinical: Optional[PatientClinical] = None
+    business_number: str | None = Field(None, max_length=40, pattern=r"^[A-Za-z0-9-]+$")
+    clinical: PatientClinical | None = None
     name: str = Field(min_length=1, max_length=120)
     birth: date
     sex: Literal["unknown", "female", "male"]
@@ -154,7 +157,7 @@ def patient_commit(db):
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, "患儿业务编号已存在，请核对或更换编号")
+        raise HTTPException(409, "患儿业务编号已存在，请核对或更换编号") from None
 
 def patient_revision(db, item, user):
     db.add(PatientRevision(patient_id=item.id, data=json.dumps(patient_json(item)), author=user.id, created=p.now().isoformat()+"Z"))
@@ -205,7 +208,7 @@ def register(app):
                 db.flush()
             except IntegrityError:
                 db.rollback()
-                raise HTTPException(409, "患儿业务编号已存在，请核对或更换编号")
+                raise HTTPException(409, "患儿业务编号已存在，请核对或更换编号") from None
             patient_revision(db, item, user)
             p.log(db, user, "patient.create", item.id)
             patient_commit(db)
@@ -257,7 +260,7 @@ def register(app):
                 try:
                     append_parameters(db, case.id, user, Parameters(**body.parameters))
                 except ValidationError as error:
-                    raise HTTPException(422, str(error))
+                    raise HTTPException(422, str(error)) from None
             p.log(db, user, "examination.create", case.id)
             db.commit()
             return p.summary(case)
@@ -282,7 +285,7 @@ def register(app):
         if body.kind != "consultation" and body.state != "saved":
             raise HTTPException(422, "此记录类型不接受协作状态")
         with p.Session() as db:
-            case = p.get_case(db, key, user)
+            p.get_case(db, key, user)
             if user.role == "reviewer" and body.kind in ("report", "organization"):
                 raise HTTPException(403, "此操作需要病例创建者或管理员权限")
             if body.kind == "consultation":
@@ -304,7 +307,7 @@ def register(app):
         with p.Session() as db:
             case = p.get_case(db, key, user)
             records = db.scalars(select(Entry).where(Entry.case_id == key).order_by(Entry.id)).all()
-            lines = ["Echo Edge · 研究检查记录", case.title, "本报告仅包含已保存的研究检查记录，不自动纳入切面模型结果。"]
+            lines = ["Cardio bridge · 研究检查记录", case.title, "本报告仅包含已保存的研究检查记录，不自动纳入切面模型结果。"]
             for item in records:
                 lines.extend([f"{item.created} | {item.kind} | {item.state}", item.text])
             p.log(db, user, "report.export", key)
@@ -334,7 +337,7 @@ def register(app):
                 db.commit()
             except IntegrityError:
                 db.rollback()
-                raise HTTPException(409, "用户名已存在")
+                raise HTTPException(409, "用户名已存在") from None
             return {"id": item.id}
 
     @app.put("/api/v1/users/{key}/role")

@@ -1,17 +1,16 @@
 import base64
-from bisect import bisect_left
-from dataclasses import dataclass, field
 import json
 import logging
 import os
-from pathlib import Path
 import re
+from bisect import bisect_left
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Annotated, Literal
 
 import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-
 
 ReviewKind = Literal["quality", "findings"]
 MAX_FRAMES = 12

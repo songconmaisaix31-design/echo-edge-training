@@ -1,8 +1,8 @@
 """Run the released Stanford checkpoint using the repository's preprocessing."""
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -16,8 +16,9 @@ def main():
     sys.path.insert(0, str(args.runtime.resolve()))
 
     import av
-    from av.video.reformatter import VideoReformatter
     import torch
+    from av.video.reformatter import VideoReformatter
+
     from benchmark_echo import normalize_image, resize_and_pad
     from evaluate_echo import checkpoint_model, decision, locked_policy
     from train_echo import WEIGHTS, whole_video_samples
@@ -55,7 +56,7 @@ def main():
         "precision": "fp32",
         "view": (*VIEWS, None)[decision(mean, threshold)],
         "sampled_frames": count,
-        "probabilities": dict(zip(VIEWS, mean.tolist())),
+        "probabilities": dict(zip(VIEWS, mean.tolist(), strict=True)),
     }, allow_nan=False))
 
 

@@ -1,13 +1,12 @@
+import av
+import main
+import platform_db as db
+from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
-import platform_db as db
 
-import av
-from fastapi.testclient import TestClient
-from PIL import Image
-
-import main
 
 def test_media_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(main.model_inference, "configuration", lambda: ("not configured", None))
@@ -53,8 +52,9 @@ def test_media_round_trip(tmp_path, monkeypatch):
     assert metadata["original"] == {"exists": True, "format": ".mp4"}
     assert metadata["modelInputs"]["stanford_view"]["status"] == "model_unavailable"
     assert client.get("/api/v1/capabilities").json()["model"] == "unavailable"
-    upload = lambda: client.post("/api/v1/media", data={"case_id": case_id},
-                                 files={"media": ("fixture.mp4", source.read_bytes())})
+    def upload():
+        return client.post("/api/v1/media", data={"case_id": case_id},
+                           files={"media": ("fixture.mp4", source.read_bytes())})
 
     def commit_failure(session):
         raise OperationalError("COMMIT", {}, RuntimeError("injected"))

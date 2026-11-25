@@ -1,12 +1,14 @@
 import json
 import math
 from datetime import date
-from typing import Literal, Optional
+from typing import Literal
+
+import platform_db as p
+from clinical import Examination
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, select
-import platform_db as p
-from clinical import Examination
+
 
 class ClinicalVersion(p.Base):
     __tablename__ = "examination_parameters"
@@ -26,12 +28,12 @@ class Measurement(p.Base):
 
 class Parameters(BaseModel):
     exam_date: date
-    height_cm: Optional[float] = Field(None, gt=0, le=300, allow_inf_nan=False)
-    weight_kg: Optional[float] = Field(None, gt=0, le=500, allow_inf_nan=False)
-    heart_rate: Optional[float] = Field(None, gt=0, le=400, allow_inf_nan=False)
-    systolic: Optional[float] = Field(None, gt=0, le=400, allow_inf_nan=False)
-    diastolic: Optional[float] = Field(None, gt=0, le=300, allow_inf_nan=False)
-    spo2: Optional[float] = Field(None, ge=0, le=100, allow_inf_nan=False)
+    height_cm: float | None = Field(None, gt=0, le=300, allow_inf_nan=False)
+    weight_kg: float | None = Field(None, gt=0, le=500, allow_inf_nan=False)
+    heart_rate: float | None = Field(None, gt=0, le=400, allow_inf_nan=False)
+    systolic: float | None = Field(None, gt=0, le=400, allow_inf_nan=False)
+    diastolic: float | None = Field(None, gt=0, le=300, allow_inf_nan=False)
+    spo2: float | None = Field(None, ge=0, le=100, allow_inf_nan=False)
     clinical_notes: str = Field("", max_length=4000)
     indication: str = Field("", max_length=4000)
     doctor: str = Field("", max_length=120)
@@ -48,15 +50,15 @@ class Parameters(BaseModel):
         return self
 
 class MeasurementInput(BaseModel):
-    replaces_id: Optional[int] = Field(None, gt=0)
+    replaces_id: int | None = Field(None, gt=0)
     item: str = Field(min_length=1, max_length=120)
     value: float = Field(allow_inf_nan=False)
     unit: str = Field(min_length=1, max_length=40)
     view: str = Field("", max_length=120)
     phase: str = Field("", max_length=120)
     source: Literal["manual", "ai"] = "manual"
-    media_id: Optional[str] = None
-    frame_index: Optional[int] = Field(None, ge=0)
+    media_id: str | None = None
+    frame_index: int | None = Field(None, ge=0)
     review: Literal["pending", "confirmed", "uncertain"] = "pending"
 
 def checked_exam(db, key, user, write=False):

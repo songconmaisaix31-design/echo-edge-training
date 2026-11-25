@@ -1,10 +1,9 @@
 import json
 import sys
 
-from fastapi import HTTPException
-import pytest
-
 import model_inference
+import pytest
+from fastapi import HTTPException
 
 
 def test_cut_view_adapter(tmp_path, monkeypatch):

@@ -1,0 +1,29 @@
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = [".venv", "work", "runs", "data", "node_modules", "frontend"]
+
+[tool.ruff.lint]
+# E/F 是语法与未用项，I 是导入顺序，B 是常见陷阱，UP 是语言升级。
+# 暂不启用 E501：行宽由审阅把关，不在门禁里制造噪声。
+# B008 例外：FastAPI 的 Depends()/Query() 就是写在默认参数里的惯用法。
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# 迁移脚本与测试会在导入前设置环境变量或 sys.path。
+"backend/migrations/**" = ["E402", "F401"]
+"backend/test_*.py" = ["E402"]
+"scripts/**" = ["E402"]
+
+[tool.pyright]
+include = ["backend"]
+exclude = ["**/node_modules", "**/__pycache__", ".venv", "work", "runs",
+           # 这两个是独立 CLI 适配器，靠 sys.path 注入复用训练脚本，不参与应用的类型检查
+           "backend/stanford_cpu.py", "backend/cardiacudc_frame.py"]
+# stanford_cpu.py 与 cardiacudc_frame.py 会引用仓库根目录的训练脚本，加上根路径才能解析。
+extraPaths = ["."]
+typeCheckingMode = "basic"
+pythonVersion = "3.13"
+reportMissingImports = "error"
+reportMissingTypeStubs = "none"

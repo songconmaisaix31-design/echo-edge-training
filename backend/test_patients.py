@@ -1,10 +1,9 @@
-import json
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
-import platform_db as p
 import main
-from clinical import Patient, PatientRevision
+import platform_db as p
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 
 def test_patient_archive(tmp_path, monkeypatch):
     engine=create_engine('sqlite:///'+str(tmp_path/'patients.db'))
@@ -24,7 +23,9 @@ def test_patient_archive(tmp_path, monkeypatch):
     body={'name':'Synthetic test only','birth':'2020-01-01','sex':'unknown','business_number':'TEST-001','history':'original history','clinical':{'events':[{'kind':'surgery','description':'test event','date':'2021-02-03'}]}}
     result=client.post('/api/v1/patients',json=body)
     assert result.status_code==201,result.text
-    patient=result.json();key=patient['id'];path=f'/api/v1/patients/{key}'
+    patient = result.json()
+    key = patient['id']
+    path = f'/api/v1/patients/{key}'
     assert patient['business_number']=='TEST-001' and patient['created']
     assert client.post('/api/v1/patients',json=body).status_code==409
     assert len(client.get('/api/v1/patients?q=TEST-001').json())==1

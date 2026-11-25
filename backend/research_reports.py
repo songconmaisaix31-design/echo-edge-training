@@ -1,14 +1,13 @@
 import json
 
-from fastapi import Depends, HTTPException
-from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, select
-
 import platform_db as db
 from analysis_contract import evidence_shortfall
 from analysis_jobs import AnalysisJob
 from clinical import Examination
+from fastapi import Depends, HTTPException
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, select
 
 
 class ReportVersion(db.Base):
@@ -98,7 +97,7 @@ def register(app):
                 raise HTTPException(404, "报告版本不存在")
             report = serialize_report(row)
             review = report["review"]
-            lines = ["Echo Edge · 已签发研究报告", f"检查 #{key} · 报告版本 #{version}",
+            lines = ["Cardio bridge · 已签发研究报告", f"检查 #{key} · 报告版本 #{version}",
                      f"签发：{report['author']} · {report['created']}", report["text"],
                      f"审核版本 #{review['version']} · {review['author']} · {review['created']}",
                      review["text"], "引用的 AI 切面分析（研究参考）"]

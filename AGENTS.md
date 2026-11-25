@@ -1,4 +1,4 @@
-# Echo Edge 工作规则
+# Cardio bridge 工作规则
 
 - 保持研究用途。AI 输出只能提供辅助判断，需保留证据、适用范围和不确定性。证据不足时提示下一步。报告由医生审核签发。危急病例按临床流程立即处理。
 - 患者资料、数据库、影像、凭证和受限资产不得进入 Git。浏览器测试使用隔离的 SQLite、独立媒体目录和 `fixtures/SOURCES.md` 登记的视频。外部影像复核默认关闭。
@@ -28,6 +28,16 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 python -m pytest backend -q
 npm --prefix frontend test
+```
+
+后端 Lint、导入约束和类型基线在 `.github/workflows/checks.yml` 里执行，本地命令相同。
+`rules/pyright-baseline.json` 登记了既有的类型告警，门禁只拦新增项；收紧基线要单独说明。
+
+```text
+python -m pip install -r scripts/lint-requirements.txt
+python -m ruff check backend
+python -X utf8 scripts/check_imports.py
+python -X utf8 scripts/check_pyright.py
 ```
 
 公开文本红线由 GitHub Actions 和 pre-commit 使用同一脚本检查。先安装 `scripts/redline-requirements.txt` 中的依赖。已安装 pre-commit 的环境可以执行 `pre-commit install` 启用提交前检查。

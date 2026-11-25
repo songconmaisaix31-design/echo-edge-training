@@ -1,25 +1,24 @@
-from contextlib import contextmanager
-from datetime import timedelta
 import hashlib
+import json
 import logging
 import os
-import json
-from pathlib import Path
 import subprocess
+from contextlib import contextmanager
+from datetime import timedelta
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore
 
+import medical_review
+import model_inference
+import platform_db as db
+from analysis_contract import FINISHED, AnalysisJobResponse, FrameView, job_result
+from clinical import Examination
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
+from model_protocol import ModelAdapter, ModelInput, ModelOutput
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select, update
-
-import model_inference
-import medical_review
-import platform_db as db
-from analysis_contract import AnalysisJobResponse, FINISHED, FrameView, job_result
-from clinical import Examination
-from model_protocol import ModelAdapter, ModelInput, ModelOutput
 
 
 class AnalysisJob(db.Base):

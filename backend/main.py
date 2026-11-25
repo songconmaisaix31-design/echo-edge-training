@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 import json
 import logging
 import math
@@ -6,18 +5,26 @@ import os
 import secrets
 import shutil
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import BoundedSemaphore
 
+import analysis_jobs
 import av
+import clinical
 import demo_config
-import model_inference
+import exam_parameters
 import medical_review
+import model_inference
+import multiview
+import public_samples
+import research_reports
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image
-from sqlalchemy.exc import SQLAlchemyError
 from platform_db import Media, Session, current, get_case, log, protect_media, register
+from sqlalchemy.exc import SQLAlchemyError
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -26,7 +33,7 @@ async def lifespan(app):
         yield
 
 
-app = FastAPI(title="Echo Edge Media API", lifespan=lifespan)
+app = FastAPI(title="Cardio bridge Media API", lifespan=lifespan)
 register(app)
 ROOT = (demo_config.ROOT / "demo-media" if demo_config.ROOT is not None
         else Path(os.environ.get("ECHO_MEDIA_ROOT", str(Path(tempfile.gettempdir()) / "echo-edge-media"))))
@@ -197,21 +204,15 @@ def frame_preview(identifier: str, index: int, user=Depends(current)):
 
 
 
-import clinical
 clinical.register(app)
 
 
-import exam_parameters
 exam_parameters.register(app)
 
-import analysis_jobs
 analysis_jobs.register(app, media_folder)
 
-import multiview
 multiview.register(app, media_folder)
 
-import public_samples
 public_samples.register(app)
 
-import research_reports
 research_reports.register(app)

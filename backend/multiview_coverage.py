@@ -1,6 +1,5 @@
 from typing import Literal
 
-
 View = Literal["A4C", "A2C", "A3C", "A5C", "PLAX", "PSAX", "subcostal", "suprasternal"]
 
 

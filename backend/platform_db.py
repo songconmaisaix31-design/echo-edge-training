@@ -2,15 +2,14 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+import demo_config
 from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, select
-from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.engine import URL
-
-import demo_config
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 database = (URL.create("sqlite", database=str(demo_config.ROOT / "demo.sqlite3")) if demo_config.ROOT is not None
@@ -19,7 +18,7 @@ engine = create_engine(database)
 Session = sessionmaker(engine, expire_on_commit=False)
 
 def now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 class User(Base):
     __tablename__ = "users"
@@ -219,7 +218,7 @@ def register(app):
     def report(key: int,user=Depends(current)):
         from fastapi.responses import PlainTextResponse
         case=detail(key,user)
-        lines=["Echo Edge · 研究影像报告",f"病例 {key} · {case['title']}",f"状态 {case['status']}",
+        lines=["Cardio bridge · 研究影像报告",f"病例 {key} · {case['title']}",f"状态 {case['status']}",
                f"影像 {len(case['media'])} 段","模型未部署，未执行切面、分割、质量或异常分析。","人工审核"]
         lines.extend(f"{r['created']} | {r['author']} | {r['text']}" for r in case["reviews"])
         if not case["reviews"]:

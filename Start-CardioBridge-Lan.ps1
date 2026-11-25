@@ -1,4 +1,4 @@
-# Start-EchoEdge-Lan.ps1
+# Start-CardioBridge-Lan.ps1
 #
 # 和 Start-StanfordBackend.ps1 的区别只有一个: 绑 0.0.0.0。
 # 床旁终端是另一台设备, 它只能通过局域网地址访问后端, 127.0.0.1 对它是不可达的。

@@ -1,18 +1,17 @@
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import json
 import os
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore, Lock
 
-from fastapi import HTTPException
-from fastapi.responses import FileResponse, Response
-
 import analysis_jobs
 import model_inference
 from analysis_contract import AnalysisJobResponse, job_result
+from fastapi import HTTPException
+from fastapi.responses import FileResponse, Response
 
 
 @dataclass
@@ -55,7 +54,7 @@ def load_samples(root):
 
 def result(id, model_type, version, fingerprint, output):
     return {"id": id, "model_type": model_type, "model_version": version, "input_sha256": fingerprint,
-            **job_result(model_type, "succeeded", output), "error": None, "created": datetime.now(timezone.utc).isoformat()}
+            **job_result(model_type, "succeeded", output), "error": None, "created": datetime.now(UTC).isoformat()}
 
 
 def register(app):

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Echo Edge · 儿童心超研究工作站
+# Cardio bridge · 儿童心超研究工作站
 
 A Windows web workstation and FastAPI backend for reviewing pediatric echocardiography videos and results from local research models.
 
@@ -154,9 +154,9 @@ To enable StepFun image review, set `ECHO_STEPFUN_KEY_FILE` to a service-readabl
 
 要启用阶跃星辰影像复核，将 `ECHO_STEPFUN_KEY_FILE` 指向服务可读取的密钥文件，将 `ECHO_STEPFUN_SAMPLES_FILE` 指向五个获准影像编号及其 MP4 原件 SHA-256 的 JSON 映射。使用绝对路径。本机启动器也可从 `work/local-workstation/settings.env` 读取这两个路径。
 
-Start the workstation with `Start-EchoEdge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
+Start the workstation with `Start-CardioBridge.ps1` after preparing the API environment, migrations and operator account. The isolated verification instructions are in [AGENTS.md](AGENTS.md). Run the preflight check before training on team data.
 
-准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-EchoEdge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
+准备好 API 环境、数据库迁移和操作员账号后，使用 `Start-CardioBridge.ps1` 启动工作站。隔离验收见 [AGENTS.md](AGENTS.md)。训练团队数据前先运行预检并查看报告。
 
 ```powershell
 & $python -X utf8 .\train_echo.py train @config --preflight-only
@@ -196,7 +196,7 @@ echo-edge-training/
 │   ├── edge-terminal/      # ESP32-S3: receives HINT, returns ACK
 │   ├── echo-panel/         # 128×64 OLED + SYN6288E voice panel
 │   └── ecw-*/ sensor-hub/ probe/ tools/
-├── Start-EchoEdge.ps1      # local launcher; -Lan and Stanford variants next to it
+├── Start-CardioBridge.ps1      # local launcher; -Lan and Stanford variants next to it
 ├── train_echo.py           # team dual-head fine-tune + preflight gate
 ├── train_stanford_lv.py    # left-ventricle segmentation
 ├── train_stanford_ef.py    # ejection fraction regression

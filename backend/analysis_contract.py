@@ -2,7 +2,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-
 INSUFFICIENT = "insufficient_evidence"
 FINISHED = ("succeeded", INSUFFICIENT)
 FrameView = Literal["A4C", "non_a4c", "unconfirmed"]

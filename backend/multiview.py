@@ -1,17 +1,16 @@
 import json
 from typing import Annotated, Literal
 
-from fastapi import Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from sqlalchemy import Column, ForeignKey, Integer, Text, select, update
-from sqlalchemy.dialects.sqlite import insert
-
 import platform_db as db
 from analysis_contract import FINISHED, INSUFFICIENT, InsufficientEvidence, job_result
 from analysis_jobs import AnalysisJob
 from exam_parameters import checked_exam
+from fastapi import Depends, HTTPException
 from medical_review import MediaIndex
 from multiview_coverage import View, view_coverage
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from sqlalchemy import Column, ForeignKey, Integer, Text, select, update
+from sqlalchemy.dialects.sqlite import insert
 
 
 class MultiviewSetup(db.Base):

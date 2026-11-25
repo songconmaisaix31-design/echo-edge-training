@@ -1,7 +1,7 @@
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def main():
@@ -15,8 +15,9 @@ def main():
 
     import av
     import numpy as np
-    from PIL import Image
     import torch
+    from PIL import Image
+
     from train_cardiacudc import CLASS_NAMES, SIDE, load_model
 
     with av.open(str(args.video)) as video:

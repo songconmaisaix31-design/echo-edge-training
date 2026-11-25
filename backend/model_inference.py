@@ -2,12 +2,11 @@ import json
 import logging
 import math
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from threading import BoundedSemaphore
 
 from fastapi import HTTPException
-
 
 SLOTS = BoundedSemaphore(1)
 LABELS = {"A4C", "PSAX"}

@@ -53,7 +53,7 @@ try {
 } finally {
     Pop-Location
 }
-./Start-EchoEdge.ps1
+./Start-CardioBridge.ps1
 ```
 
 浏览器能打开 `http://127.0.0.1:5181/` 的登录页后，在 PowerShell 检查前端代理和硬件、模型配置。
@@ -76,7 +76,7 @@ Invoke-RestMethod 'http://127.0.0.1:5181/api/v1/capabilities' -TimeoutSec 5
 | `ECHO_CARDIACUDC_CHECKPOINT` | `cardiacudc-fourchamber-v1` 的第 18 轮权重绝对路径 |
 | `ECHO_TERMINAL_PORT` | 装有 EdgeTerminal 的串口，例如 `COM4` |
 
-网页和 API 只监听本机。需要避开已占用端口时使用 `./Start-EchoEdge.ps1 -ApiPort 8036 -WebPort 5188`，并以对应网页端口检查 `/api/v1/capabilities`。首页响应 `200`，能力接口应显示 `Stanford 研究模型 · PyTorch CPU FP32`、`structureConfigured: true` 和 `terminalConfigured: true`。在「系统管理 → 模型状态」可查看结构分割接入状态，点击「刷新数据」重新读取。如果模型配置为未就绪，检查 Release 文件是否齐全、环境变量是否为绝对路径。如果发送失败，核对板上固件和串口号，并退出占用串口的调试工具。启动脚本会输出服务日志位置。
+网页和 API 只监听本机。需要避开已占用端口时使用 `./Start-CardioBridge.ps1 -ApiPort 8036 -WebPort 5188`，并以对应网页端口检查 `/api/v1/capabilities`。首页响应 `200`，能力接口应显示 `Stanford 研究模型 · PyTorch CPU FP32`、`structureConfigured: true` 和 `terminalConfigured: true`。在「系统管理 → 模型状态」可查看结构分割接入状态，点击「刷新数据」重新读取。如果模型配置为未就绪，检查 Release 文件是否齐全、环境变量是否为绝对路径。如果发送失败，核对板上固件和串口号，并退出占用串口的调试工具。启动脚本会输出服务日志位置。
 
 数据库、媒体原件和叠图保存在 `work/workstation/` 下。备份或迁移时停止写入，保留 SQLite 数据库和整个 `media/` 目录。模型和现场影像按各自授权保存。
 
@@ -123,7 +123,7 @@ arduino-cli upload --fqbn $board --port $port --input-dir $output $sketch
 $env:ECHO_REVIEW_BASE_URL = 'https://api.deepseek.com'
 $env:ECHO_REVIEW_MODEL = 'deepseek-flash'
 $env:ECHO_REVIEW_API_KEY_ENV = 'ANTHROPIC_AUTH_TOKEN'
-./Start-EchoEdge.ps1
+./Start-CardioBridge.ps1
 ```
 
 `ECHO_REVIEW_API_KEY_ENV` 保存服务端读取凭据的环境变量名。默认名为 `ECHO_REVIEW_API_KEY`。使用其他兼容服务时，将上述基地址和模型名改为对应配置，并在服务进程环境中设置 API key。凭据只在后端读取，能力接口返回配置状态、模型名和配置说明。请求采用 HTTPS，连接超时为 15 秒，读取超时为 180 秒。
