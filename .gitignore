@@ -37,6 +37,8 @@ DICOMDIR
 
 # 参赛套件模块定义需要入库（默认规则忽略 *.json）
 !/reference/moce-kit/**/*.json
+!/rules/pyright-baseline.json
+
 
 # 固件导出的采样样本要入库（默认规则忽略 *.log）
 !/docs/firmware/samples/*.log
