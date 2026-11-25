@@ -19,6 +19,8 @@ ignore = ["E501", "B008"]
 [tool.pyright]
 include = ["backend"]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", "work", "runs"]
+# stanford_cpu.py 与 cardiacudc_frame.py 会引用仓库根目录的训练脚本，加上根路径才能解析。
+extraPaths = ["."]
 typeCheckingMode = "basic"
 pythonVersion = "3.13"
 reportMissingImports = "error"
